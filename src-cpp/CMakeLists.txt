@@ -23,6 +23,8 @@ set(AUDIO_ENGINE_SOURCES
     src/AudioBridge.cpp
     src/AudioDecoder.cpp
     src/WavWriter.cpp
+    src/TimeStretchEngine.cpp
+    src/TempoStrategy.cpp
 )
 
 # Static Library Target
@@ -112,3 +114,27 @@ if(APPLE)
     )
 endif()
 add_test(NAME CliEndToEndTest COMMAND test_cli_e2e)
+
+add_executable(test_time_stretch tests/test_time_stretch.cpp)
+target_link_libraries(test_time_stretch PRIVATE pulse_audio_engine)
+if(APPLE)
+    target_link_libraries(test_time_stretch PRIVATE
+        "-framework CoreAudio"
+        "-framework AudioToolbox"
+        "-framework Accelerate"
+        "-framework CoreFoundation"
+    )
+endif()
+add_test(NAME TimeStretchTest COMMAND test_time_stretch)
+
+add_executable(test_cli_tempo_match_e2e tests/test_cli_tempo_match_e2e.cpp)
+target_link_libraries(test_cli_tempo_match_e2e PRIVATE pulse_audio_engine)
+if(APPLE)
+    target_link_libraries(test_cli_tempo_match_e2e PRIVATE
+        "-framework CoreAudio"
+        "-framework AudioToolbox"
+        "-framework Accelerate"
+        "-framework CoreFoundation"
+    )
+endif()
+add_test(NAME CliTempoMatchEndToEndTest COMMAND test_cli_tempo_match_e2e)
