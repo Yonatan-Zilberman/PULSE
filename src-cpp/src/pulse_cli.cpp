@@ -27,7 +27,9 @@ void printUsage(const char* progName) {
               << "  --no-phrase-aware           Disable musical phrase alignment (fallback to bar/beat snap)\n"
               << "  --phrase-bars <N>           Preferred phrase length in bars: 2, 4, 8, 16, 32, auto (default: 8)\n"
               << "  --phrase-length-bars <N>    Alias for --phrase-bars\n"
-              << "  --transition-strategy <name> Transition strategy name (default: phrase_crossfade)\n"
+              << "  --transition-strategy <name> Transition strategy: phrase_crossfade, eq_crossfade, bass_swap (default: bass_swap)\n"
+              << "  --bass-swap-point <f>       Bass swap midpoint progress [0.1 - 0.9] (default: 0.50)\n"
+              << "  --eq-low-cut-db <f>         Low EQ cut depth in dB (default: -24.0)\n"
               << "  --min-phrase-confidence <f>  Minimum phrase confidence required [0.0 - 1.0] (default: 0.5)\n"
               << "  --align-beats               Enable musical beat/downbeat alignment (default: enabled)\n"
               << "  --no-align-beats            Disable musical beat alignment\n"
@@ -87,7 +89,9 @@ int main(int argc, char* argv[]) {
     // Phrase-Aware Options
     bool phraseAware = true;
     uint32_t phraseBars = 8;
-    std::string transitionStrategy = "phrase_crossfade";
+    std::string transitionStrategy = "bass_swap";
+    double bassSwapPoint = 0.50;
+    double eqLowCutDb = -24.0;
     double minPhraseConfidence = 0.5;
 
     // Tempo Strategy Options
@@ -120,6 +124,10 @@ int main(int argc, char* argv[]) {
             }
         } else if (arg == "--transition-strategy" && i + 1 < argc) {
             transitionStrategy = argv[++i];
+        } else if (arg == "--bass-swap-point" && i + 1 < argc) {
+            bassSwapPoint = std::stod(argv[++i]);
+        } else if (arg == "--eq-low-cut-db" && i + 1 < argc) {
+            eqLowCutDb = std::stod(argv[++i]);
         } else if (arg == "--min-phrase-confidence" && i + 1 < argc) {
             minPhraseConfidence = std::stod(argv[++i]);
         } else if (arg == "--duration" && i + 1 < argc) {
@@ -166,7 +174,7 @@ int main(int argc, char* argv[]) {
               << "Deck A Input:        " << deckAPath << "\n"
               << "Deck B Input:        " << deckBPath << "\n"
               << "Phrase Planning:     " << (phraseAware ? "Phrase-Aware (Preferred: " + std::to_string(phraseBars) + " bars)" : "Disabled") << "\n"
-              << "Transition Strategy: " << transitionStrategy << "\n"
+              << "Transition Strategy: " << transitionStrategy << " (Bass Swap Point: " << bassSwapPoint << ", Low Cut: " << eqLowCutDb << " dB)\n"
               << "Beat Alignment:      " << (alignBeats ? (snapToBar ? "Downbeat Bar Snap" : "Beat Snap") : "Disabled") << "\n"
               << "Tempo Strategy:      " << tempoStrategyStr << " (Max Stretch: " << maxStretchPct << "%)\n"
               << "Output Audio:        " << outAudioPath << "\n"
@@ -238,7 +246,7 @@ int main(int argc, char* argv[]) {
 
     if (tempoDecision.stretchExceededThreshold && !forceStretch) {
         std::cout << "  ⚠️ WARNING: " << tempoDecision.rejectionReason << "\n"
-                  << "  Switching transition type from eq_crossfade to " << tempoDecision.recommendedTransitionType << ".\n";
+                  << "  Switching transition type from " << transitionStrategy << " to " << tempoDecision.recommendedTransitionType << ".\n";
     }
 
     // Configure Deck Players with evaluated tempo ratios
@@ -368,6 +376,20 @@ int main(int argc, char* argv[]) {
     deckB->setPlaybackPosition(alignedCueBSec * tempoDecision.effectiveDeckBTempoRatio);
     deckB->setPlaying(false);
 
+    std::string execTransType = (tempoDecision.stretchExceededThreshold && !forceStretch)
+        ? tempoDecision.recommendedTransitionType
+        : transitionStrategy;
+
+    uint32_t transType = 2; // BassSwap default
+    if (execTransType == "phrase_crossfade") {
+        transType = 0;
+    } else if (execTransType == "eq_crossfade") {
+        transType = 1;
+    } else if (execTransType == "bass_swap") {
+        transType = 2;
+    }
+    transExec->getBassSwapStrategy().setSwapPoint(bassSwapPoint);
+
     // 7. Offline Block-by-Block Mix Rendering
     uint32_t sampleRate = config.sample_rate;
     uint32_t blockSize = config.buffer_size;
@@ -387,15 +409,15 @@ int main(int argc, char* argv[]) {
         if (currentTime >= transStartSec && !transitionTriggered) {
             deckB->setPlaybackPosition(alignedCueBSec * tempoDecision.effectiveDeckBTempoRatio);
             deckB->setPlaying(true);
-            TransitionCommandC cmd{0, 1, actualTransDuration, 0};
+            TransitionCommandC cmd{0, 1, actualTransDuration, transType};
             transExec->startTransition(cmd);
             transitionTriggered = true;
         }
 
-        // Update transition crossfader automation
+        // Update transition crossfader and EQ automation
         if (transitionTriggered && currentTime >= transStartSec) {
             double elapsedTrans = currentTime - transStartSec;
-            transExec->updateAutomation(elapsedTrans, *mixer);
+            transExec->updateAutomation(elapsedTrans, *mixer, deckA, deckB);
         }
 
         // Process audio block through real-time audio pipeline
@@ -442,9 +464,19 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    std::string execTransType = (tempoDecision.stretchExceededThreshold && !forceStretch)
-        ? tempoDecision.recommendedTransitionType
-        : transitionStrategy;
+    // Calculate EQ initial/mid/final snapshot values for report
+    double deckA_low_init = 0.0, deckA_low_mid = 0.0, deckA_low_final = 0.0;
+    double deckB_low_init = 0.0, deckB_low_mid = 0.0, deckB_low_final = 0.0;
+
+    if (execTransType == "bass_swap" || execTransType == "eq_crossfade") {
+        deckA_low_init = 0.0;
+        deckA_low_mid = -0.5;
+        deckA_low_final = -1.0;
+
+        deckB_low_init = -1.0;
+        deckB_low_mid = -0.5;
+        deckB_low_final = 0.0;
+    }
 
     reportFile << "{\n"
                << "  \"deck_a\": {\n"
@@ -513,8 +545,22 @@ int main(int argc, char* argv[]) {
                << "  },\n"
                << "  \"transition\": {\n"
                << "    \"type\": \"" << execTransType << "\",\n"
+               << "    \"strategy\": \"" << execTransType << "\",\n"
+               << "    \"bass_swap_point\": " << std::fixed << std::setprecision(2) << bassSwapPoint << ",\n"
                << "    \"duration_seconds\": " << std::fixed << std::setprecision(2) << actualTransDuration << ",\n"
-               << "    \"start_position_seconds\": " << std::fixed << std::setprecision(2) << transStartSec << "\n"
+               << "    \"start_position_seconds\": " << std::fixed << std::setprecision(2) << transStartSec << ",\n"
+               << "    \"eq_automation\": {\n"
+               << "      \"deck_a\": {\n"
+               << "        \"initial\": { \"low\": " << std::fixed << std::setprecision(2) << deckA_low_init << ", \"mid\": 0.0, \"high\": 0.0 },\n"
+               << "        \"mid_swap\": { \"low\": " << std::fixed << std::setprecision(2) << deckA_low_mid << ", \"mid\": 0.0, \"high\": 0.0 },\n"
+               << "        \"final\": { \"low\": " << std::fixed << std::setprecision(2) << deckA_low_final << ", \"mid\": 0.0, \"high\": 0.0 }\n"
+               << "      },\n"
+               << "      \"deck_b\": {\n"
+               << "        \"initial\": { \"low\": " << std::fixed << std::setprecision(2) << deckB_low_init << ", \"mid\": 0.0, \"high\": 0.0 },\n"
+               << "        \"mid_swap\": { \"low\": " << std::fixed << std::setprecision(2) << deckB_low_mid << ", \"mid\": 0.0, \"high\": 0.0 },\n"
+               << "        \"final\": { \"low\": " << std::fixed << std::setprecision(2) << deckB_low_final << ", \"mid\": 0.0, \"high\": 0.0 }\n"
+               << "      }\n"
+               << "    }\n"
                << "  },\n"
                << "  \"output\": {\n"
                << "    \"file_path\": \"" << formatJsonString(outAudioPath) << "\",\n"
