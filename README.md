@@ -77,14 +77,16 @@ ctest --test-dir src-cpp/build --output-on-failure
 
 #### Phase 0 CLI Audio-Engine Prototype:
 ```bash
-# Generate deterministic test fixtures:
-./src-cpp/build/generate_fixtures
+# Generate deterministic test fixtures (steady, ambiguous, drifting, syncopated):
+./src-cpp/build/generate_fixtures tests/audio
 
-# Run prototype CLI offline transition mix:
+# Run prototype CLI offline transition mix with beat and downbeat phase alignment:
 ./src-cpp/build/pulse_cli \
   --deck-a tests/audio/fixture_a.wav \
   --deck-b tests/audio/fixture_b.wav \
   --transition-sec 4.0 \
+  --align-beats \
+  --snap-to-bar \
   --out tests/audio/test_out.wav \
   --report tests/audio/test_report.json
 ```

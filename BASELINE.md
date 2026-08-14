@@ -41,18 +41,22 @@
 ### Tier 3: Real-Time Audio Engine & Phase 0 CLI Prototype (C++20 / Apple Frameworks)
 - **Build System:** `src-cpp/CMakeLists.txt` targeting C++20 with `-Wall -Wextra -Wpedantic -Werror` and native Apple frameworks (`CoreAudio`, `AudioToolbox`, `Accelerate`, `CoreFoundation`).
 - **Headers & Safety:** `AudioEngine.h`, `DeckPlayer.h`, `Mixer.h`, `TransitionExecutor.h`, `AudioDecoder.h`, `WavWriter.h`, and `AudioBridgeTypes.h` documenting real-time thread safety (zero heap allocations, zero blocking locks in audio callbacks).
-- **Native Audio Decoding:** `AudioDecoder.cpp` wrapping `ExtAudioFile` / `AudioToolbox` for hardware-accelerated local ingestion with accurate sample rate, channel count, duration, peak telemetry, and autocorrelation tempo estimation.
-- **Audio Output:** `WavWriter.cpp` implementing zero-dependency 16-bit / 48kHz PCM WAV file serialization and synthetic fixture generation.
-- **Phase 0 CLI Target:** `pulse_cli` binary executing automated offline transition mixes between dual decks with structured JSON telemetry emission.
+- **Native Audio Decoding & DSP Beat Tracking:** `AudioDecoder.cpp` wrapping `ExtAudioFile` / `AudioToolbox` for hardware-accelerated local ingestion with sample rate, channels, peak telemetry, RMS energy novelty extraction, autocorrelation tempo estimation, candidate hypotheses resolution (0.5x, 2.0x, secondary peaks), phase offset optimization, 4/4 downbeat placement, and sliding-window tempo drift detection.
+- **Audio Output & Synthetic Generators:** `WavWriter.cpp` implementing zero-dependency 16-bit / 48kHz PCM WAV file serialization and synthetic fixture generators for steady, ambiguous, drifting, and syncopated audio cases.
+- **Phase 0 CLI Target:** `pulse_cli` binary executing automated offline transition mixes between dual decks with musical beat and downbeat phase alignment (`--align-beats`, `--snap-to-bar`) and structured JSON telemetry emission.
 - **FFI Boundary:** `AudioBridge.cpp` implementing `extern "C"` ABI functions (`pulse_audio_init`, `pulse_audio_load_track`, `pulse_audio_play_pause`, `pulse_audio_get_deck_state`, `pulse_audio_execute_transition`).
 - **Test Suite:**
   - `test_audio_bridge`: C ABI size, alignment, and state mutation tests.
-  - `test_audio_decoder`: Audio file decoding, 0-byte resilience, corrupt header detection, and timing accuracy tests.
+  - `test_audio_decoder`: Steady 120/128 BPM, ambiguous 70/140 BPM, drifting tempo, syncopated rhythm with silence intro, and corrupt/empty file error tests.
   - `test_mixer_dsp`: Equal-power crossfader, volume scaling, and peak limiter tests.
-  - `test_cli_e2e`: End-to-end transition rendering and JSON artifact emission verification.
-- **Deterministic Audio Fixtures (`tests/audio/`):**
+  - `test_cli_e2e`: End-to-end beat-aligned transition rendering and JSON artifact emission verification.
+- **Deterministic Audio Fixtures (`tests/audio/` & `tests/golden-set/`):**
   - `fixture_a.wav` (48kHz stereo, 440 Hz + 120 BPM clicks, 10.0s)
   - `fixture_b.wav` (48kHz stereo, 880 Hz + 120 BPM clicks, 10.0s)
+  - `fixture_steady_128bpm.wav` (48kHz stereo, 523.25 Hz + 128 BPM clicks, 10.0s)
+  - `fixture_ambiguous_70_140bpm.wav` (48kHz stereo, 70/140 BPM syncopated pulses, 10.0s)
+  - `fixture_drifting_115_125bpm.wav` (48kHz stereo, 115 -> 125 BPM accelerating tempo, 10.0s)
+  - `fixture_syncopated_difficult.wav` (48kHz stereo, 2.0s silence intro + swing rhythm, 10.0s)
   - `sine_440hz_120bpm_48k.wav` & `sine_880hz_120bpm_48k.wav`
   - `invalid_empty.wav` (0-byte error test)
   - `corrupt_header.wav` (corrupt header error test)
