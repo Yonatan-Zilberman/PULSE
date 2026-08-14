@@ -59,3 +59,10 @@ pnpm-debug.log*
 # Test outputs
 coverage/
 .vitest/
+
+# Generated audio outputs, sets, and snippets
+tests/audio/*.wav
+tests/audio/transitions/
+tests/audio/*_report.json
+tests/audio/*_mix*.wav
+tests/golden-set/
