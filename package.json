@@ -10,6 +10,7 @@
     "format": "prettier --check \"src/**/*.{ts,tsx,css,html}\"",
     "format:fix": "prettier --write \"src/**/*.{ts,tsx,css,html}\"",
     "test": "vitest run",
+    "audit:licenses": "./scripts/audit_dependencies.sh",
     "tauri": "tauri"
   },
   "dependencies": {

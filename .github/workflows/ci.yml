@@ -7,6 +7,21 @@ on:
     branches: [ main ]
 
 jobs:
+  audit-and-licensing:
+    name: Dependency Licensing & Zero-Cloud Audit
+    runs-on: macos-14
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Run Dependency & Licensing Audit Gate
+        run: ./scripts/audit_dependencies.sh
+
   frontend:
     name: Frontend Quality Gates (React / TS)
     runs-on: macos-14
