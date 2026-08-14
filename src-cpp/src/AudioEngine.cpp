@@ -81,29 +81,4 @@ void AudioEngine::processAudioBlock(float* outMasterBuffer, uint32_t numSamples,
     mixer_->mix(deckABuffer_.data(), deckBBuffer_.data(), outMasterBuffer, numSamples, numChannels);
 }
 
-void TransitionExecutor::startTransition(const TransitionCommandC& command) {
-    activeCommand_ = command;
-    isActive_.store(true);
-}
-
-void TransitionExecutor::updateAutomation(double elapsedTimeSeconds, Mixer& mixer) noexcept {
-    if (!isActive_.load() || activeCommand_.duration_seconds <= 0.0) return;
-
-    double progress = std::clamp(elapsedTimeSeconds / activeCommand_.duration_seconds, 0.0, 1.0);
-
-    float startX = (activeCommand_.source_deck == 0) ? -1.0f : 1.0f;
-    float endX = (activeCommand_.destination_deck == 1) ? 1.0f : -1.0f;
-
-    float currentX = static_cast<float>(startX + (endX - startX) * progress);
-    mixer.setCrossfader(currentX);
-
-    if (progress >= 1.0) {
-        isActive_.store(false);
-    }
-}
-
-bool TransitionExecutor::isTransitionActive() const noexcept {
-    return isActive_.load();
-}
-
 } // namespace pulse::audio

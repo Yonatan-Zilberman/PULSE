@@ -128,6 +128,7 @@ bool AudioDecoder::decodeFile(const std::string& filePath,
     // 7. Estimate BPM and perform rich tempo / beat tracking analysis
     outAudio.tempoProfile = analyzeTempo(outAudio.samples.data(), outAudio.totalFrames, targetSampleRate, targetChannels);
     outAudio.detectedBpm = outAudio.tempoProfile.primaryBpm;
+    outAudio.phraseProfile = outAudio.tempoProfile.phraseProfile;
 
     return true;
 }
@@ -250,6 +251,25 @@ TempoAnalysisResult AudioDecoder::analyzeTempo(const float* samples, uint64_t to
         std::sort(outPeaks.begin(), outPeaks.end(), [](const auto& a, const auto& b) {
             return a.second > b.second;
         });
+
+        // Preference for fundamental beat lag over subharmonic multiple (e.g. 120 BPM over 60 BPM)
+        if (outBestLag >= minL * 2) {
+            size_t halfLag = outBestLag / 2;
+            size_t searchStart = (halfLag > 2) ? halfLag - 2 : minL;
+            size_t searchEnd = std::min(halfLag + 2, maxL);
+            size_t bestHalfLag = halfLag;
+            double bestHalfCorr = 0.0;
+            for (size_t l = searchStart; l <= searchEnd; ++l) {
+                if (l < corrArray.size() && corrArray[l] > bestHalfCorr) {
+                    bestHalfCorr = corrArray[l];
+                    bestHalfLag = l;
+                }
+            }
+            if (bestHalfCorr >= 0.80 * outBestCorr && bestHalfLag >= minL) {
+                outBestLag = bestHalfLag;
+                outBestCorr = bestHalfCorr;
+            }
+        }
     };
 
     // 3. Global Autocorrelation in the BPM range [50, 220]
@@ -362,13 +382,15 @@ TempoAnalysisResult AudioDecoder::analyzeTempo(const float* samples, uint64_t to
     }
 
     // Detect actual first onset after any leading silence
-    double firstOnsetSec = static_cast<double>(bestPhaseHop) / hopsPerSecond;
-    double thresholdNovelty = maxNovelty * 0.15f;
-    for (double h = static_cast<double>(bestPhaseHop); h < static_cast<double>(numHops); h += beatIntervalHops) {
-        size_t hopIdx = static_cast<size_t>(std::round(h));
-        if (hopIdx < numHops && onsetNorm[hopIdx] >= thresholdNovelty) {
-            firstOnsetSec = static_cast<double>(hopIdx) / hopsPerSecond;
-            break;
+    double firstOnsetSec = 0.0;
+    if (envelope[0] <= 0.01f) {
+        double thresholdNovelty = maxNovelty * 0.15f;
+        for (double h = static_cast<double>(bestPhaseHop); h < static_cast<double>(numHops); h += beatIntervalHops) {
+            size_t hopIdx = static_cast<size_t>(std::round(h));
+            if (hopIdx < numHops && onsetNorm[hopIdx] >= thresholdNovelty) {
+                firstOnsetSec = static_cast<double>(hopIdx) / hopsPerSecond;
+                break;
+            }
         }
     }
 
@@ -379,18 +401,24 @@ TempoAnalysisResult AudioDecoder::analyzeTempo(const float* samples, uint64_t to
     for (size_t barBeat = 0; barBeat < 4; ++barBeat) {
         double score = 0.0;
         size_t count = 0;
-        for (double h = static_cast<double>(bestPhaseHop) + barBeat * beatIntervalHops;
-             h < static_cast<double>(numHops);
-             h += (4.0 * beatIntervalHops)) {
+        double startHop = firstOnsetSec * hopsPerSecond + static_cast<double>(barBeat) * beatIntervalHops;
+        for (double h = startHop; h < static_cast<double>(numHops); h += (4.0 * beatIntervalHops)) {
             size_t hopIdx = static_cast<size_t>(std::round(h));
             if (hopIdx < numHops) {
-                score += onsetNorm[hopIdx];
+                float localMax = onsetNorm[hopIdx];
+                if (hopIdx > 0 && onsetNorm[hopIdx - 1] > localMax) {
+                    localMax = onsetNorm[hopIdx - 1];
+                }
+                if (hopIdx + 1 < numHops && onsetNorm[hopIdx + 1] > localMax) {
+                    localMax = onsetNorm[hopIdx + 1];
+                }
+                score += localMax;
                 count++;
             }
         }
         if (count > 0) {
             score /= count;
-            if (score > bestDownbeatScore) {
+            if (score > bestDownbeatScore * 1.15) {
                 bestDownbeatScore = score;
                 bestDownbeatOffset = barBeat;
             }
@@ -443,6 +471,29 @@ TempoAnalysisResult AudioDecoder::analyzeTempo(const float* samples, uint64_t to
         }
     }
 
+    // 8. Musical Phrase Boundary Analysis (4, 8, 16, 32 Bars)
+    PhraseProfile phraseProf;
+    if (!bars.empty() && confidence > 0.0f) {
+        for (size_t i = 0; i < bars.size(); ++i) {
+            if (i % 4 == 0) {
+                phraseProf.boundaries4Bar.push_back(bars[i]);
+            }
+            if (i % 8 == 0) {
+                phraseProf.boundaries8Bar.push_back(bars[i]);
+            }
+            if (i % 16 == 0) {
+                phraseProf.boundaries16Bar.push_back(bars[i]);
+            }
+            if (i % 32 == 0) {
+                phraseProf.boundaries32Bar.push_back(bars[i]);
+            }
+        }
+        float barCountFactor = std::min(1.0f, static_cast<float>(bars.size()) / 4.0f);
+        phraseProf.phraseConfidence = confidence * barCountFactor;
+    } else {
+        phraseProf.phraseConfidence = 0.0f;
+    }
+
     result.primaryBpm = primaryBpm;
     result.confidence = confidence;
     result.alternativeHypotheses = altHypotheses;
@@ -450,6 +501,7 @@ TempoAnalysisResult AudioDecoder::analyzeTempo(const float* samples, uint64_t to
     result.beatPositions = beats;
     result.downbeatPositions = downbeats;
     result.barPositions = bars;
+    result.phraseProfile = phraseProf;
     result.isVariableTempo = isVariableTempo;
     result.tempoDriftMinBpm = driftMinBpm;
     result.tempoDriftMaxBpm = driftMaxBpm;

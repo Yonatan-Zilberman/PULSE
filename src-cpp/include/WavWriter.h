@@ -83,6 +83,16 @@ public:
                                         double bpm = 124.0,
                                         float amplitude = 0.80f,
                                         uint32_t sampleRate = 48000);
+
+    /**
+     * @brief Generates a deterministic multi-phrase audio fixture with accented bar and phrase downbeats.
+     */
+    static bool createPhraseFixture(const std::string& filePath,
+                                    double frequencyHz,
+                                    uint32_t totalBars,
+                                    double bpm = 120.0,
+                                    float amplitude = 0.80f,
+                                    uint32_t sampleRate = 48000);
 };
 
 } // namespace pulse::audio

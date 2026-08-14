@@ -7,6 +7,17 @@
 namespace pulse::audio {
 
 /**
+ * @brief Structured musical phrase boundaries and confidence profile.
+ */
+struct PhraseProfile {
+    std::vector<double> boundaries4Bar;   // Timestamps (seconds) of 4-bar boundaries
+    std::vector<double> boundaries8Bar;   // Timestamps (seconds) of 8-bar boundaries
+    std::vector<double> boundaries16Bar;  // Timestamps (seconds) of 16-bar boundaries
+    std::vector<double> boundaries32Bar;  // Timestamps (seconds) of 32-bar boundaries
+    float phraseConfidence{0.0f};         // [0.0, 1.0] based on beatgrid confidence & bar consistency
+};
+
+/**
  * @brief Rich tempo analysis and beat tracking result.
  */
 struct TempoAnalysisResult {
@@ -20,6 +31,7 @@ struct TempoAnalysisResult {
     bool isVariableTempo{false};               // True if tempo drifts > 2.0 BPM across track
     double tempoDriftMinBpm{120.0};
     double tempoDriftMaxBpm{120.0};
+    PhraseProfile phraseProfile;               // Structural phrase boundaries and confidence
 };
 
 /**
@@ -36,6 +48,7 @@ struct DecodedAudio {
     bool clippingDetected{false};         // true if peakAmplitude >= 1.0f - 1e-4f
     double detectedBpm{120.0};            // Estimated tempo from onset/energy intervals
     TempoAnalysisResult tempoProfile;     // Comprehensive tempo and beat tracking telemetry
+    PhraseProfile phraseProfile;          // Extracted phrase boundaries and confidence
 };
 
 /**

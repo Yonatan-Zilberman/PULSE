@@ -263,4 +263,48 @@ bool WavWriter::createSyncopatedFixture(const std::string& filePath,
     return writeWav16(filePath, samples.data(), totalFrames, sampleRate, channels);
 }
 
+bool WavWriter::createPhraseFixture(const std::string& filePath,
+                                    double frequencyHz,
+                                    uint32_t totalBars,
+                                    double bpm,
+                                    float amplitude,
+                                    uint32_t sampleRate) {
+    if (totalBars == 0 || bpm <= 0.0 || sampleRate == 0) {
+        return false;
+    }
+
+    double secPerBeat = 60.0 / bpm;
+    double secPerBar = 4.0 * secPerBeat;
+    double durationSec = static_cast<double>(totalBars) * secPerBar;
+
+    uint64_t totalFrames = static_cast<uint64_t>(durationSec * sampleRate);
+    uint32_t channels = 2;
+    std::vector<float> samples(totalFrames * channels, 0.0f);
+
+    double beatIntervalFrames = secPerBeat * sampleRate;
+    constexpr double twoPi = 6.28318530717958647692;
+
+    for (uint64_t f = 0; f < totalFrames; ++f) {
+        double timeSec = static_cast<double>(f) / sampleRate;
+        double baseSine = std::sin(twoPi * frequencyHz * timeSec);
+
+        uint64_t currentBeat = static_cast<uint64_t>(f / beatIntervalFrames);
+        bool isDownbeat = (currentBeat % 4 == 0);
+
+        double beatPhase = std::fmod(static_cast<double>(f), beatIntervalFrames);
+        double clickDecay = std::exp(-beatPhase / (sampleRate * 0.02));
+        double clickAmp = isDownbeat ? 0.60 : 0.40;
+
+        double click = std::sin(twoPi * 1200.0 * timeSec) * clickDecay * clickAmp;
+
+        float value = static_cast<float>((baseSine * 0.50 + click) * amplitude);
+        value = std::clamp(value, -1.0f, 1.0f);
+
+        samples[f * channels + 0] = value;
+        samples[f * channels + 1] = value;
+    }
+
+    return writeWav16(filePath, samples.data(), totalFrames, sampleRate, channels);
+}
+
 } // namespace pulse::audio
