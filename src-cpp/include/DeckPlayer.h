@@ -1,6 +1,7 @@
 #pragma once
 
 #include "AudioBridgeTypes.h"
+#include "AudioDecoder.h"
 #include <string>
 #include <atomic>
 
@@ -24,6 +25,10 @@ public:
     void setPlaying(bool playing);
     bool isPlaying() const;
 
+    void setPlaybackPosition(double seconds);
+    double getPlaybackPosition() const;
+    double getDuration() const;
+
     void setVolume(float vol);
     float getVolume() const;
 
@@ -36,6 +41,7 @@ public:
     void processBlock(float* outputBuffer, uint32_t numSamples, uint32_t numChannels) noexcept;
 
     DeckStateC getState() const noexcept;
+    const DecodedAudio& getDecodedAudio() const noexcept { return loadedAudio_; }
 
 private:
     uint8_t deckId_;
@@ -50,6 +56,8 @@ private:
     std::atomic<float> drumStem_{1.0f};
     std::atomic<float> bassStem_{1.0f};
     std::atomic<float> otherStem_{1.0f};
+
+    DecodedAudio loadedAudio_{};
 };
 
 } // namespace pulse::audio

@@ -6,7 +6,13 @@ namespace pulse::audio {
 
 DeckPlayer::DeckPlayer(uint8_t deckId) : deckId_(deckId) {}
 
-bool DeckPlayer::loadFile(const std::string& /*filePath*/) {
+bool DeckPlayer::loadFile(const std::string& filePath) {
+    DecodedAudio decoded;
+    if (!AudioDecoder::decodeFile(filePath, decoded)) {
+        return false;
+    }
+
+    loadedAudio_ = std::move(decoded);
     playbackPosition_.store(0.0);
     isPlaying_.store(false);
     return true;
@@ -18,6 +24,18 @@ void DeckPlayer::setPlaying(bool playing) {
 
 bool DeckPlayer::isPlaying() const {
     return isPlaying_.load();
+}
+
+void DeckPlayer::setPlaybackPosition(double seconds) {
+    playbackPosition_.store(std::max(0.0, seconds));
+}
+
+double DeckPlayer::getPlaybackPosition() const {
+    return playbackPosition_.load();
+}
+
+double DeckPlayer::getDuration() const {
+    return loadedAudio_.durationSeconds;
 }
 
 void DeckPlayer::setVolume(float vol) {
@@ -48,14 +66,38 @@ void DeckPlayer::setStemLevels(float vocal, float drum, float bass, float other)
 void DeckPlayer::processBlock(float* outputBuffer, uint32_t numSamples, uint32_t numChannels) noexcept {
     if (!outputBuffer) return;
 
-    if (!isPlaying_.load()) {
+    if (!isPlaying_.load() || loadedAudio_.samples.empty() || loadedAudio_.sampleRate == 0) {
         std::memset(outputBuffer, 0, numSamples * numChannels * sizeof(float));
         return;
     }
 
-    // Baseline silence fill until DSP audio file decoding is integrated in Phase 1
-    std::memset(outputBuffer, 0, numSamples * numChannels * sizeof(float));
-    playbackPosition_.store(playbackPosition_.load() + (static_cast<double>(numSamples) / 48000.0));
+    double currentPosSec = playbackPosition_.load();
+    uint64_t currentFrame = static_cast<uint64_t>(currentPosSec * loadedAudio_.sampleRate);
+    uint32_t srcChannels = loadedAudio_.channels;
+    uint64_t totalFrames = loadedAudio_.totalFrames;
+    float vol = volume_.load();
+
+    for (uint32_t s = 0; s < numSamples; ++s) {
+        if (currentFrame < totalFrames) {
+            for (uint32_t c = 0; c < numChannels; ++c) {
+                uint32_t srcChan = (srcChannels == 1) ? 0 : (c % srcChannels);
+                float sample = loadedAudio_.samples[currentFrame * srcChannels + srcChan];
+                outputBuffer[s * numChannels + c] = sample * vol;
+            }
+            currentFrame++;
+        } else {
+            for (uint32_t c = 0; c < numChannels; ++c) {
+                outputBuffer[s * numChannels + c] = 0.0f;
+            }
+        }
+    }
+
+    double nextPosSec = static_cast<double>(currentFrame) / loadedAudio_.sampleRate;
+    playbackPosition_.store(nextPosSec);
+
+    if (currentFrame >= totalFrames) {
+        isPlaying_.store(false);
+    }
 }
 
 DeckStateC DeckPlayer::getState() const noexcept {

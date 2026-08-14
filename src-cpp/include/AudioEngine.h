@@ -6,6 +6,7 @@
 #include "TransitionExecutor.h"
 #include <memory>
 #include <atomic>
+#include <vector>
 
 namespace pulse::audio {
 
@@ -26,6 +27,18 @@ public:
     int executeTransition(const TransitionCommandC& command);
 
     bool isInitialized() const noexcept { return isInitialized_.load(); }
+    const AudioEngineConfigC& getConfig() const noexcept { return config_; }
+
+    DeckPlayer* getDeck(uint8_t deckId) {
+        return (deckId == 0) ? deckA_.get() : ((deckId == 1) ? deckB_.get() : nullptr);
+    }
+    Mixer* getMixer() { return mixer_.get(); }
+    TransitionExecutor* getTransitionExecutor() { return transitionExecutor_.get(); }
+
+    /**
+     * @brief Process an audio block offline or in real-time callback.
+     */
+    void processAudioBlock(float* outMasterBuffer, uint32_t numSamples, uint32_t numChannels) noexcept;
 
 private:
     AudioEngine();
@@ -41,6 +54,10 @@ private:
     std::unique_ptr<DeckPlayer> deckB_;
     std::unique_ptr<Mixer> mixer_;
     std::unique_ptr<TransitionExecutor> transitionExecutor_;
+
+    // Pre-allocated scratch buffers for real-time safe mixing
+    std::vector<float> deckABuffer_;
+    std::vector<float> deckBBuffer_;
 };
 
 } // namespace pulse::audio

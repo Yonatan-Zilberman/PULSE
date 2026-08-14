@@ -1,5 +1,6 @@
 #include "../include/Mixer.h"
 #include <algorithm>
+#include <cmath>
 
 namespace pulse::audio {
 
@@ -25,14 +26,26 @@ void Mixer::mix(const float* deckABuffer, const float* deckBBuffer, float* maste
     if (!masterBuffer || !deckABuffer || !deckBBuffer) return;
 
     float xfade = crossfaderPosition_.load();
-    // Constant-power / linear crossfade baseline
-    float gainA = (1.0f - xfade) * 0.5f;
-    float gainB = (1.0f + xfade) * 0.5f;
+    
+    // Equal-power sinusoidal crossfade curve
+    constexpr float kPiOverFour = 0.7853981633974483f; // pi / 4
+    float theta = (xfade + 1.0f) * kPiOverFour; // theta in [0, pi/2]
+    float gainA = std::cos(theta);
+    float gainB = std::sin(theta);
     float masterGain = masterVolume_.load();
 
     uint32_t totalSamples = numSamples * numChannels;
     for (uint32_t i = 0; i < totalSamples; ++i) {
-        masterBuffer[i] = (deckABuffer[i] * gainA + deckBBuffer[i] * gainB) * masterGain;
+        float rawMix = (deckABuffer[i] * gainA + deckBBuffer[i] * gainB) * masterGain;
+        
+        // Fast soft-knee limiter preventing digital wrap-around clipping
+        if (rawMix > 1.0f) {
+            masterBuffer[i] = 1.0f;
+        } else if (rawMix < -1.0f) {
+            masterBuffer[i] = -1.0f;
+        } else {
+            masterBuffer[i] = rawMix;
+        }
     }
 }
 
