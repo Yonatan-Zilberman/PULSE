@@ -1,4 +1,4 @@
-# Pulse
+# PULSE
 
 > **Autonomous, Local-First, Zero-Cloud DJ Application for macOS Apple Silicon (M1–M5)**
 
@@ -18,7 +18,7 @@ PULSE is architected into three strictly isolated tiers:
                                       │ IPC (Rust FFI)
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │ 2. APPLICATION CORE: Rust (pulse-core)                                      │
-│    - SQLite library index, ML analysis scheduler, DJ Brain set planner     │
+│    - SQLite library index, ML analysis scheduler, DJ Brain set planner      │
 └─────────────────────────────────────────────────────────────────────────────┘
                                       │ Direct C ABI (extern "C")
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -67,19 +67,28 @@ cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
 cargo test --manifest-path src-tauri/Cargo.toml
 ```
 
-#### C++ Audio Engine Build & Smoke Test:
+#### C++ Audio Engine Build & Test Suite:
 ```bash
-# Via CMake & CTest:
+# Configure, build, and run CTest test suite:
 cmake -B src-cpp/build -S src-cpp
 cmake --build src-cpp/build
 ctest --test-dir src-cpp/build --output-on-failure
-
-# Or direct Clang compile:
-clang++ -std=c++20 -Wall -Wextra -Wpedantic -Isrc-cpp/include \
-  src-cpp/src/AudioBridge.cpp src-cpp/src/AudioEngine.cpp \
-  src-cpp/src/DeckPlayer.cpp src-cpp/src/Mixer.cpp \
-  src-cpp/tests/test_audio_bridge.cpp -o test_audio_bridge && ./test_audio_bridge && rm test_audio_bridge
 ```
+
+#### Phase 0 CLI Audio-Engine Prototype:
+```bash
+# Generate deterministic test fixtures:
+./src-cpp/build/generate_fixtures
+
+# Run prototype CLI offline transition mix:
+./src-cpp/build/pulse_cli \
+  --deck-a tests/audio/fixture_a.wav \
+  --deck-b tests/audio/fixture_b.wav \
+  --transition-sec 4.0 \
+  --out tests/audio/test_out.wav \
+  --report tests/audio/test_report.json
+```
+
 
 ---
 

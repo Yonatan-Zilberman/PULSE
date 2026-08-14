@@ -38,11 +38,24 @@
   - `src-tauri/src/library/`: SQLite table DDL (`CREATE_TRACKS_TABLE`, indexes) and in-memory `LibraryCache` initialization tests.
   - `src-tauri/src/audio_bridge/`: `types.rs` and `ffi.rs` with C-compatible POD types matching C++ structs.
 
-### Tier 3: Real-Time Audio Engine (C++20 / JUCE 8 Harness)
-- **Build System:** `src-cpp/CMakeLists.txt` targeting C++20 with `-Wall -Wextra -Wpedantic -Werror` and Apple frameworks (`CoreAudio`, `AudioToolbox`, `Accelerate`).
-- **Headers & Safety:** `AudioEngine.h`, `DeckPlayer.h`, `Mixer.h`, `TransitionExecutor.h`, and `AudioBridgeTypes.h` documenting real-time thread safety (zero heap allocations, zero blocking locks).
+### Tier 3: Real-Time Audio Engine & Phase 0 CLI Prototype (C++20 / Apple Frameworks)
+- **Build System:** `src-cpp/CMakeLists.txt` targeting C++20 with `-Wall -Wextra -Wpedantic -Werror` and native Apple frameworks (`CoreAudio`, `AudioToolbox`, `Accelerate`, `CoreFoundation`).
+- **Headers & Safety:** `AudioEngine.h`, `DeckPlayer.h`, `Mixer.h`, `TransitionExecutor.h`, `AudioDecoder.h`, `WavWriter.h`, and `AudioBridgeTypes.h` documenting real-time thread safety (zero heap allocations, zero blocking locks in audio callbacks).
+- **Native Audio Decoding:** `AudioDecoder.cpp` wrapping `ExtAudioFile` / `AudioToolbox` for hardware-accelerated local ingestion with accurate sample rate, channel count, duration, peak telemetry, and autocorrelation tempo estimation.
+- **Audio Output:** `WavWriter.cpp` implementing zero-dependency 16-bit / 48kHz PCM WAV file serialization and synthetic fixture generation.
+- **Phase 0 CLI Target:** `pulse_cli` binary executing automated offline transition mixes between dual decks with structured JSON telemetry emission.
 - **FFI Boundary:** `AudioBridge.cpp` implementing `extern "C"` ABI functions (`pulse_audio_init`, `pulse_audio_load_track`, `pulse_audio_play_pause`, `pulse_audio_get_deck_state`, `pulse_audio_execute_transition`).
-- **Test Harness:** `src-cpp/tests/test_audio_bridge.cpp` verifying struct sizes, alignment, engine lifecycle, and state mutation.
+- **Test Suite:**
+  - `test_audio_bridge`: C ABI size, alignment, and state mutation tests.
+  - `test_audio_decoder`: Audio file decoding, 0-byte resilience, corrupt header detection, and timing accuracy tests.
+  - `test_mixer_dsp`: Equal-power crossfader, volume scaling, and peak limiter tests.
+  - `test_cli_e2e`: End-to-end transition rendering and JSON artifact emission verification.
+- **Deterministic Audio Fixtures (`tests/audio/`):**
+  - `fixture_a.wav` (48kHz stereo, 440 Hz + 120 BPM clicks, 10.0s)
+  - `fixture_b.wav` (48kHz stereo, 880 Hz + 120 BPM clicks, 10.0s)
+  - `sine_440hz_120bpm_48k.wav` & `sine_880hz_120bpm_48k.wav`
+  - `invalid_empty.wav` (0-byte error test)
+  - `corrupt_header.wav` (corrupt header error test)
 
 ---
 
@@ -56,8 +69,10 @@
 | **Frontend Unit Tests** | `pnpm test` | Vitest React & Zustand store tests |
 | **Rust Formatting** | `cargo fmt --manifest-path src-tauri/Cargo.toml -- --check` | Rustfmt style adherence |
 | **Rust Linting** | `cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings` | Zero clippy warnings |
-| **Rust Core Unit Tests** | `cargo test --manifest-path src-tauri/Cargo.toml` | Serde roundtrips, score validations, SQLite DDL |
-| **C++ Build & Smoke Test** | `clang++ -std=c++20 -Isrc-cpp/include src-cpp/src/*.cpp src-cpp/tests/test_audio_bridge.cpp -o test_harness && ./test_harness && rm test_harness` | C++20 ABI & state machine assertions |
+| **Rust Core Unit Tests** | `cargo test --manifest-path src-tauri/Cargo.toml` | Serde roundtrips, tempo detection, beatgrid alignment, SQLite DDL |
+| **C++ Build & CTest Suite** | `cmake -B src-cpp/build -S src-cpp && cmake --build src-cpp/build && ctest --test-dir src-cpp/build --output-on-failure` | C++20 ABI, AudioDecoder, Mixer DSP, and CLI E2E tests |
+| **Phase 0 CLI Feasibility Run** | `./src-cpp/build/pulse_cli --deck-a tests/audio/fixture_a.wav --deck-b tests/audio/fixture_b.wav --out tests/audio/test_out.wav --report tests/audio/test_report.json` | End-to-end automated transition mix & JSON telemetry |
+
 
 ---
 
