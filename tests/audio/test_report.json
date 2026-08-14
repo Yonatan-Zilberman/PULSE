@@ -1,0 +1,29 @@
+{
+  "deck_a": {
+    "file_path": "tests/audio/fixture_a.wav",
+    "sample_rate": 48000,
+    "channels": 2,
+    "duration_seconds": 10.00,
+    "detected_bpm": 120.0,
+    "peak_amplitude": 0.7419
+  },
+  "deck_b": {
+    "file_path": "tests/audio/fixture_b.wav",
+    "sample_rate": 48000,
+    "channels": 2,
+    "duration_seconds": 10.00,
+    "detected_bpm": 120.0,
+    "peak_amplitude": 0.7238
+  },
+  "transition": {
+    "type": "eq_crossfade",
+    "duration_seconds": 4.00,
+    "start_position_seconds": 6.00
+  },
+  "output": {
+    "file_path": "tests/audio/test_out.wav",
+    "rendered_duration_seconds": 16.00,
+    "clipping_detected": false,
+    "max_peak_db": -0.09
+  }
+}
