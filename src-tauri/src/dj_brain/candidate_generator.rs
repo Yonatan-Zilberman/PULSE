@@ -76,7 +76,7 @@ impl CandidateGenerator {
             (
                 score.clamp(0.90, 1.0),
                 risk.clamp(0.0, 0.05),
-                TransitionType::EqCrossfade,
+                TransitionType::BassSwap,
             )
         } else if bpm_diff_norm <= 0.06 {
             // Moderate delta (3% to 6%)
@@ -86,7 +86,7 @@ impl CandidateGenerator {
             (
                 score.clamp(0.50, 0.90),
                 risk.clamp(0.15, 0.40),
-                TransitionType::EqCrossfade,
+                TransitionType::BassSwap,
             )
         } else {
             // Excessive delta (> 6%)
@@ -314,7 +314,7 @@ mod tests {
 
         assert!(candidate.score.bpm_score >= 0.90);
         assert!(candidate.artifact_risk <= 0.05);
-        assert_eq!(candidate.transition_type, TransitionType::EqCrossfade);
+        assert_eq!(candidate.transition_type, TransitionType::BassSwap);
         assert!(candidate.score.is_valid());
     }
 
@@ -332,7 +332,7 @@ mod tests {
         // Delta = 5.0% -> Score in [0.50, 0.90], Risk in [0.15, 0.40]
         assert!(candidate.score.bpm_score >= 0.50 && candidate.score.bpm_score <= 0.90);
         assert!(candidate.artifact_risk >= 0.15 && candidate.artifact_risk <= 0.40);
-        assert_eq!(candidate.transition_type, TransitionType::EqCrossfade);
+        assert_eq!(candidate.transition_type, TransitionType::BassSwap);
         assert!(candidate.score.is_valid());
     }
 
