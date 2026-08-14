@@ -1,0 +1,61 @@
+# Build Outputs & Package Managers
+node_modules/
+dist/
+build/
+target/
+src-cpp/build/
+.pnpm-store/
+
+# Tauri & Desktop Bundles
+src-tauri/target/
+src-tauri/gen/
+*.dmg
+*.app
+*.ipa
+
+# C++ Build Artifacts
+*.o
+*.a
+*.dylib
+*.so
+*.out
+compile_commands.json
+.cmake/
+CMakeCache.txt
+CMakeFiles/
+
+# Local Data, Analysis Caches & Model Weights
+analysis-cache/*
+!analysis-cache/.gitkeep
+models/*.onnx
+models/*.pt
+models/*.bin
+!models/.gitkeep
+
+# Operating System & IDE Artifacts
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Logs & Environment Variables
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.env
+.env.local
+.env.*.local
+
+# Test outputs
+coverage/
+.vitest/

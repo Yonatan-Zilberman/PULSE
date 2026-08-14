@@ -1,0 +1,79 @@
+name: PULSE CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  frontend:
+    name: Frontend Quality Gates (React / TS)
+    runs-on: macos-14
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 9
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run ESLint
+        run: pnpm lint
+
+      - name: Run Typecheck & Build
+        run: pnpm build
+
+      - name: Run Frontend Tests
+        run: pnpm test
+
+  rust-core:
+    name: Rust Core Quality Gates (Tauri 2 / Cargo)
+    runs-on: macos-14
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Rust formatting check
+        run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
+
+      - name: Rust Clippy linter
+        run: cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
+
+      - name: Rust Unit Tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+
+  cpp-audio-engine:
+    name: C++ Audio Engine Harness (Apple Silicon)
+    runs-on: macos-14
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup CMake
+        uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmake-version: '3.28.x'
+
+      - name: Configure CMake
+        run: cmake -B src-cpp/build -S src-cpp
+
+      - name: Build C++ Audio Engine
+        run: cmake --build src-cpp/build
+
+      - name: Run C++ Unit Tests
+        run: ctest --test-dir src-cpp/build --output-on-failure

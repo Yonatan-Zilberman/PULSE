@@ -1,0 +1,5 @@
+CompileFlags:
+  Add:
+    - -I/Users/yonatanzilberman/Documents/Pulse/src-cpp/include
+    - -Iinclude
+    - -std=c++20
