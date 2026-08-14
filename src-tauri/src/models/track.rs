@@ -22,6 +22,12 @@ pub struct TempoProfile {
     pub downbeat_positions: Vec<f64>,
     pub bar_positions: Vec<f64>,
     pub grid_offset_seconds: f64,
+    #[serde(default)]
+    pub is_variable_tempo: bool,
+    #[serde(default)]
+    pub tempo_drift_min_bpm: f64,
+    #[serde(default)]
+    pub tempo_drift_max_bpm: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -138,6 +144,9 @@ mod tests {
                 downbeat_positions: vec![0.0, 1.904],
                 bar_positions: vec![0.0, 1.904],
                 grid_offset_seconds: 0.02,
+                is_variable_tempo: false,
+                tempo_drift_min_bpm: 126.0,
+                tempo_drift_max_bpm: 126.0,
             },
             key: KeyProfile {
                 key: "A Minor".to_string(),
