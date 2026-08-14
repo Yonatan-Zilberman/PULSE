@@ -77,18 +77,19 @@ ctest --test-dir src-cpp/build --output-on-failure
 
 #### Phase 0 CLI Audio-Engine Prototype:
 ```bash
-# Generate deterministic test fixtures (steady, ambiguous, drifting, syncopated):
+# Generate deterministic test fixtures (steady, ambiguous, drifting, syncopated, multi-phrase):
 ./src-cpp/build/generate_fixtures tests/audio
 
-# Run prototype CLI offline transition mix with beat and downbeat phase alignment:
+# Run prototype CLI offline phrase-aware transition mix with pitch-preserving tempo matching:
 ./src-cpp/build/pulse_cli \
   --deck-a tests/audio/fixture_a.wav \
-  --deck-b tests/audio/fixture_b.wav \
-  --transition-sec 4.0 \
-  --align-beats \
-  --snap-to-bar \
-  --out tests/audio/test_out.wav \
-  --report tests/audio/test_report.json
+  --deck-b tests/audio/fixture_tempo_small_122bpm.wav \
+  --phrase-aware \
+  --phrase-bars 4 \
+  --tempo-strategy source \
+  --transition-strategy phrase_crossfade \
+  --out tests/audio/phrase_mix_out.wav \
+  --report tests/audio/phrase_mix_report.json
 ```
 
 
