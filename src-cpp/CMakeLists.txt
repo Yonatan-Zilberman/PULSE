@@ -25,6 +25,8 @@ set(AUDIO_ENGINE_SOURCES
     src/WavWriter.cpp
     src/TimeStretchEngine.cpp
     src/TempoStrategy.cpp
+    src/TransitionPlanner.cpp
+    src/TransitionExecutor.cpp
 )
 
 # Static Library Target
@@ -138,3 +140,39 @@ if(APPLE)
     )
 endif()
 add_test(NAME CliTempoMatchEndToEndTest COMMAND test_cli_tempo_match_e2e)
+
+add_executable(test_phrase_analysis tests/test_phrase_analysis.cpp)
+target_link_libraries(test_phrase_analysis PRIVATE pulse_audio_engine)
+if(APPLE)
+    target_link_libraries(test_phrase_analysis PRIVATE
+        "-framework CoreAudio"
+        "-framework AudioToolbox"
+        "-framework Accelerate"
+        "-framework CoreFoundation"
+    )
+endif()
+add_test(NAME PhraseAnalysisTest COMMAND test_phrase_analysis)
+
+add_executable(test_transition_planner tests/test_transition_planner.cpp)
+target_link_libraries(test_transition_planner PRIVATE pulse_audio_engine)
+if(APPLE)
+    target_link_libraries(test_transition_planner PRIVATE
+        "-framework CoreAudio"
+        "-framework AudioToolbox"
+        "-framework Accelerate"
+        "-framework CoreFoundation"
+    )
+endif()
+add_test(NAME TransitionPlannerTest COMMAND test_transition_planner)
+
+add_executable(test_cli_phrase_transition_e2e tests/test_cli_phrase_transition_e2e.cpp)
+target_link_libraries(test_cli_phrase_transition_e2e PRIVATE pulse_audio_engine)
+if(APPLE)
+    target_link_libraries(test_cli_phrase_transition_e2e PRIVATE
+        "-framework CoreAudio"
+        "-framework AudioToolbox"
+        "-framework Accelerate"
+        "-framework CoreFoundation"
+    )
+endif()
+add_test(NAME CliPhraseTransitionEndToEndTest COMMAND test_cli_phrase_transition_e2e)
