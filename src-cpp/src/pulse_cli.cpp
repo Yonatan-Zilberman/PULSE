@@ -3,6 +3,7 @@
 #include "../include/WavWriter.h"
 #include <iostream>
 #include <fstream>
+#include <sstream>
 #include <iomanip>
 #include <cmath>
 #include <string>
@@ -20,6 +21,10 @@ void printUsage(const char* progName) {
               << "  --transition-sec <sec>      Transition duration in seconds (default: 4.0)\n"
               << "  --transition-time <sec>     Alias for --transition-sec\n"
               << "  --transition-start <sec>    Mix start timestamp in seconds (default: durationA - transition_sec)\n"
+              << "  --align-beats               Enable musical beat/downbeat alignment (default: enabled)\n"
+              << "  --no-align-beats            Disable musical beat alignment\n"
+              << "  --snap-to-bar               Snap transition start to closest bar downbeat (default: enabled)\n"
+              << "  --no-snap-to-bar            Disable downbeat bar snapping (snap to beat instead)\n"
               << "  --duration <sec>            Total rendered mix duration (default: auto)\n"
               << "  --out <path.wav>            Output rendered WAV path (default: output_mix.wav)\n"
               << "  --out-audio <path.wav>      Alias for --out\n"
@@ -41,6 +46,17 @@ std::string formatJsonString(const std::string& input) {
     return out;
 }
 
+std::string formatDoubleArrayJson(const std::vector<double>& arr) {
+    std::ostringstream ss;
+    ss << "[";
+    for (size_t i = 0; i < arr.size(); ++i) {
+        if (i > 0) ss << ", ";
+        ss << std::fixed << std::setprecision(1) << arr[i];
+    }
+    ss << "]";
+    return ss.str();
+}
+
 } // anonymous namespace
 
 int main(int argc, char* argv[]) {
@@ -51,6 +67,8 @@ int main(int argc, char* argv[]) {
     double transitionDuration = 4.0;
     double customTransitionStart = -1.0;
     double customTotalDuration = -1.0;
+    bool alignBeats = true;
+    bool snapToBar = true;
 
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
@@ -64,6 +82,14 @@ int main(int argc, char* argv[]) {
             customTransitionStart = std::stod(argv[++i]);
         } else if (arg == "--duration" && i + 1 < argc) {
             customTotalDuration = std::stod(argv[++i]);
+        } else if (arg == "--align-beats" || arg == "--beat-align") {
+            alignBeats = true;
+        } else if (arg == "--no-align-beats") {
+            alignBeats = false;
+        } else if (arg == "--snap-to-bar") {
+            snapToBar = true;
+        } else if (arg == "--no-snap-to-bar") {
+            snapToBar = false;
         } else if ((arg == "--out" || arg == "--out-audio") && i + 1 < argc) {
             outAudioPath = argv[++i];
         } else if ((arg == "--report" || arg == "--out-json") && i + 1 < argc) {
@@ -90,6 +116,7 @@ int main(int argc, char* argv[]) {
               << "Deck A Input:       " << deckAPath << "\n"
               << "Deck B Input:       " << deckBPath << "\n"
               << "Transition Length:  " << transitionDuration << "s\n"
+              << "Beat Alignment:     " << (alignBeats ? (snapToBar ? "Downbeat Bar Snap" : "Beat Snap") : "Disabled") << "\n"
               << "Output Audio:       " << outAudioPath << "\n"
               << "Output Report:      " << outReportPath << "\n"
               << "----------------------------------------------------------------\n";
@@ -113,7 +140,7 @@ int main(int argc, char* argv[]) {
     std::cout << "  Deck A: " << metaA.durationSeconds << "s | "
               << metaA.sampleRate << "Hz | " << metaA.channels << "ch | "
               << "Peak: " << metaA.peakAmplitude << " (" << metaA.maxPeakDb << " dB) | "
-              << "BPM: " << metaA.detectedBpm << "\n";
+              << "BPM: " << metaA.detectedBpm << " (Conf: " << metaA.tempoProfile.confidence << ")\n";
 
     // 3. Ingest and decode Deck B
     std::cout << "Ingesting Deck B..." << std::endl;
@@ -126,22 +153,73 @@ int main(int argc, char* argv[]) {
     std::cout << "  Deck B: " << metaB.durationSeconds << "s | "
               << metaB.sampleRate << "Hz | " << metaB.channels << "ch | "
               << "Peak: " << metaB.peakAmplitude << " (" << metaB.maxPeakDb << " dB) | "
-              << "BPM: " << metaB.detectedBpm << "\n";
+              << "BPM: " << metaB.detectedBpm << " (Conf: " << metaB.tempoProfile.confidence << ")\n";
 
-    // 4. Calculate Transition Planning & Timing
+    // 4. Calculate Transition Planning, Beat Alignment & Timing
     double durA = metaA.durationSeconds;
     double durB = metaB.durationSeconds;
     double actualTransDuration = std::max(0.1, std::min(transitionDuration, std::min(durA, durB)));
 
-    double transStartSec = (customTransitionStart >= 0.0)
+    double rawTransStartSec = (customTransitionStart >= 0.0)
         ? customTransitionStart
         : std::max(0.0, durA - actualTransDuration);
 
+    std::string alignmentMode = "none";
+    double alignedBeatASec = rawTransStartSec;
+    double alignedCueBSec = 0.0;
+    double phaseOffsetSec = 0.0;
+    double tempoRatio = metaB.detectedBpm / (metaA.detectedBpm > 0.0 ? metaA.detectedBpm : 120.0);
+
+    if (alignBeats) {
+        if (snapToBar && !metaA.tempoProfile.downbeatPositions.empty()) {
+            alignmentMode = "downbeat_snap";
+            // Find downbeat on or immediately preceding rawTransStartSec
+            double bestDownbeat = metaA.tempoProfile.downbeatPositions.front();
+            for (double db : metaA.tempoProfile.downbeatPositions) {
+                if (db <= rawTransStartSec) {
+                    bestDownbeat = db;
+                } else {
+                    break;
+                }
+            }
+            alignedBeatASec = bestDownbeat;
+        } else if (!metaA.tempoProfile.beatPositions.empty()) {
+            alignmentMode = "beat_snap";
+            double bestBeat = metaA.tempoProfile.beatPositions.front();
+            for (double bp : metaA.tempoProfile.beatPositions) {
+                if (bp <= rawTransStartSec) {
+                    bestBeat = bp;
+                } else {
+                    break;
+                }
+            }
+            alignedBeatASec = bestBeat;
+        } else {
+            alignmentMode = "time_fallback";
+            alignedBeatASec = rawTransStartSec;
+        }
+
+        // Align Deck B cue point to first downbeat / beat
+        if (snapToBar && !metaB.tempoProfile.downbeatPositions.empty()) {
+            alignedCueBSec = metaB.tempoProfile.downbeatPositions.front();
+        } else if (!metaB.tempoProfile.beatPositions.empty()) {
+            alignedCueBSec = metaB.tempoProfile.beatPositions.front();
+        } else {
+            alignedCueBSec = metaB.tempoProfile.gridOffsetSeconds;
+        }
+
+        phaseOffsetSec = metaA.tempoProfile.gridOffsetSeconds - metaB.tempoProfile.gridOffsetSeconds;
+    }
+
+    double transStartSec = alignedBeatASec;
     double totalRenderSec = (customTotalDuration > 0.0)
         ? customTotalDuration
-        : (transStartSec + durB);
+        : (transStartSec + durB - alignedCueBSec);
 
     std::cout << "Executing transition:\n"
+              << "  Alignment Mode:     " << alignmentMode << "\n"
+              << "  Deck A Aligned Pos: " << alignedBeatASec << "s\n"
+              << "  Deck B Cue Pos:     " << alignedCueBSec << "s\n"
               << "  Transition Start:   " << transStartSec << "s\n"
               << "  Transition Window:  " << actualTransDuration << "s\n"
               << "  Total Render Mix:   " << totalRenderSec << "s\n"
@@ -157,7 +235,7 @@ int main(int argc, char* argv[]) {
     deckA->setPlaybackPosition(0.0);
     deckA->setPlaying(true);
 
-    deckB->setPlaybackPosition(0.0);
+    deckB->setPlaybackPosition(alignedCueBSec);
     deckB->setPlaying(false);
 
     // 6. Offline Block-by-Block Mix Rendering
@@ -177,6 +255,7 @@ int main(int argc, char* argv[]) {
     while (currentTime < totalRenderSec) {
         // Trigger Deck B playback and transition executor when reaching transition timestamp
         if (currentTime >= transStartSec && !transitionTriggered) {
+            deckB->setPlaybackPosition(alignedCueBSec);
             deckB->setPlaying(true);
             TransitionCommandC cmd{0, 1, actualTransDuration, 1};
             transExec->startTransition(cmd);
@@ -240,6 +319,11 @@ int main(int argc, char* argv[]) {
                << "    \"channels\": " << metaA.channels << ",\n"
                << "    \"duration_seconds\": " << std::fixed << std::setprecision(2) << metaA.durationSeconds << ",\n"
                << "    \"detected_bpm\": " << std::fixed << std::setprecision(1) << metaA.detectedBpm << ",\n"
+               << "    \"bpm_confidence\": " << std::fixed << std::setprecision(2) << metaA.tempoProfile.confidence << ",\n"
+               << "    \"alternative_hypotheses\": " << formatDoubleArrayJson(metaA.tempoProfile.alternativeHypotheses) << ",\n"
+               << "    \"grid_offset_seconds\": " << std::fixed << std::setprecision(3) << metaA.tempoProfile.gridOffsetSeconds << ",\n"
+               << "    \"total_beats_detected\": " << metaA.tempoProfile.beatPositions.size() << ",\n"
+               << "    \"is_variable_tempo\": " << (metaA.tempoProfile.isVariableTempo ? "true" : "false") << ",\n"
                << "    \"peak_amplitude\": " << std::fixed << std::setprecision(4) << metaA.peakAmplitude << "\n"
                << "  },\n"
                << "  \"deck_b\": {\n"
@@ -248,7 +332,19 @@ int main(int argc, char* argv[]) {
                << "    \"channels\": " << metaB.channels << ",\n"
                << "    \"duration_seconds\": " << std::fixed << std::setprecision(2) << metaB.durationSeconds << ",\n"
                << "    \"detected_bpm\": " << std::fixed << std::setprecision(1) << metaB.detectedBpm << ",\n"
+               << "    \"bpm_confidence\": " << std::fixed << std::setprecision(2) << metaB.tempoProfile.confidence << ",\n"
+               << "    \"alternative_hypotheses\": " << formatDoubleArrayJson(metaB.tempoProfile.alternativeHypotheses) << ",\n"
+               << "    \"grid_offset_seconds\": " << std::fixed << std::setprecision(3) << metaB.tempoProfile.gridOffsetSeconds << ",\n"
+               << "    \"total_beats_detected\": " << metaB.tempoProfile.beatPositions.size() << ",\n"
+               << "    \"is_variable_tempo\": " << (metaB.tempoProfile.isVariableTempo ? "true" : "false") << ",\n"
                << "    \"peak_amplitude\": " << std::fixed << std::setprecision(4) << metaB.peakAmplitude << "\n"
+               << "  },\n"
+               << "  \"beat_alignment\": {\n"
+               << "    \"alignment_mode\": \"" << alignmentMode << "\",\n"
+               << "    \"deck_a_aligned_beat_sec\": " << std::fixed << std::setprecision(2) << alignedBeatASec << ",\n"
+               << "    \"deck_b_aligned_cue_sec\": " << std::fixed << std::setprecision(2) << alignedCueBSec << ",\n"
+               << "    \"phase_offset_sec\": " << std::fixed << std::setprecision(2) << phaseOffsetSec << ",\n"
+               << "    \"tempo_ratio\": " << std::fixed << std::setprecision(2) << tempoRatio << "\n"
                << "  },\n"
                << "  \"transition\": {\n"
                << "    \"type\": \"eq_crossfade\",\n"

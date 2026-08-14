@@ -16,11 +16,10 @@ int main() {
     std::string deckAPath = (tempDir / "track_a.wav").string();
     std::string deckBPath = (tempDir / "track_b.wav").string();
     std::string outWavPath = (tempDir / "mix_out.wav").string();
-    std::string outJsonPath = (tempDir / "report_out.json").string();
 
-    // 1. Generate synthetic tracks A (440Hz, 4.0s) and B (880Hz, 4.0s)
-    bool createdA = pulse::audio::WavWriter::createSyntheticFixture(deckAPath, 440.0, 4.0, 120.0, 0.80f, 48000);
-    bool createdB = pulse::audio::WavWriter::createSyntheticFixture(deckBPath, 880.0, 4.0, 120.0, 0.75f, 48000);
+    // 1. Generate synthetic tracks A (440Hz, 120 BPM, 6.0s) and B (880Hz, 120 BPM, 6.0s)
+    bool createdA = pulse::audio::WavWriter::createSyntheticFixture(deckAPath, 440.0, 6.0, 120.0, 0.80f, 48000);
+    bool createdB = pulse::audio::WavWriter::createSyntheticFixture(deckBPath, 880.0, 6.0, 120.0, 0.75f, 48000);
     assert(createdA && createdB);
 
     // 2. Initialize Engine and Load Tracks
@@ -38,16 +37,35 @@ int main() {
 
     assert(deckA != nullptr && deckB != nullptr && mixer != nullptr && transExec != nullptr);
 
-    // 3. Configure transition: start at 2.0s, transition for 2.0s, total mix 6.0s
-    double transStartSec = 2.0;
+    const auto& metaA = deckA->getDecodedAudio();
+    const auto& metaB = deckB->getDecodedAudio();
+    assert(std::abs(metaA.detectedBpm - 120.0) <= 1.5);
+    assert(std::abs(metaB.detectedBpm - 120.0) <= 1.5);
+    assert(!metaA.tempoProfile.beatPositions.empty());
+    assert(!metaB.tempoProfile.beatPositions.empty());
+
+    // 3. Configure transition: snap to Deck A downbeat/beat closest to 4.0s
+    double targetStart = 4.0;
+    double transStartSec = targetStart;
+    if (!metaA.tempoProfile.downbeatPositions.empty()) {
+        for (double db : metaA.tempoProfile.downbeatPositions) {
+            if (db <= targetStart) transStartSec = db;
+        }
+    }
+
+    double cueBSec = 0.0;
+    if (!metaB.tempoProfile.downbeatPositions.empty()) {
+        cueBSec = metaB.tempoProfile.downbeatPositions.front();
+    }
+
     double transDurationSec = 2.0;
-    double totalRenderSec = 6.0;
+    double totalRenderSec = transStartSec + metaB.durationSeconds - cueBSec;
 
     mixer->setCrossfader(-1.0f);
     deckA->setPlaybackPosition(0.0);
     deckA->setPlaying(true);
 
-    deckB->setPlaybackPosition(0.0);
+    deckB->setPlaybackPosition(cueBSec);
     deckB->setPlaying(false);
 
     uint32_t sampleRate = 48000;
@@ -65,6 +83,7 @@ int main() {
 
     while (currentTime < totalRenderSec) {
         if (currentTime >= transStartSec && !transitionTriggered) {
+            deckB->setPlaybackPosition(cueBSec);
             deckB->setPlaying(true);
             TransitionCommandC cmd{0, 1, transDurationSec, 1};
             transExec->startTransition(cmd);
@@ -89,7 +108,7 @@ int main() {
         maxPeak = std::max(maxPeak, std::abs(s));
     }
     assert(maxPeak > 0.5f && maxPeak <= 1.0f);
-    std::cout << "  Rendered mix verified: frames=" << renderedFrames << ", maxPeak=" << maxPeak << std::endl;
+    std::cout << "  Rendered beat-aligned mix verified: frames=" << renderedFrames << ", maxPeak=" << maxPeak << std::endl;
 
     // 5. Write output WAV and verify file exists
     bool wavWritten = pulse::audio::WavWriter::writeWav16(outWavPath, renderedMix.data(), renderedFrames, sampleRate, channels);
