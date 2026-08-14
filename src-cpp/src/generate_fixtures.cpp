@@ -68,6 +68,26 @@ int main(int argc, char* argv[]) {
     }
     std::cout << "  Generated " << corruptFile << std::endl;
 
+    // 11. Fixture Tempo Small: 122 BPM (+1.67%), 440 Hz, 10.0s
+    std::string fixtureSmall122 = (outputDir / "fixture_tempo_small_122bpm.wav").string();
+    pulse::audio::WavWriter::createTempoTestFixture(fixtureSmall122, 440.0, 10.0, 122.0, 0.80f, 48000);
+    std::cout << "  Generated " << fixtureSmall122 << std::endl;
+
+    // 12. Fixture Tempo Moderate: 126 BPM (+5.0%), 440 Hz, 10.0s
+    std::string fixtureMod126 = (outputDir / "fixture_tempo_moderate_126bpm.wav").string();
+    pulse::audio::WavWriter::createTempoTestFixture(fixtureMod126, 440.0, 10.0, 126.0, 0.80f, 48000);
+    std::cout << "  Generated " << fixtureMod126 << std::endl;
+
+    // 13. Fixture Tempo Octave: 140 BPM (2x octave from 70), 440 Hz, 10.0s
+    std::string fixtureOctave140 = (outputDir / "fixture_tempo_octave_140bpm.wav").string();
+    pulse::audio::WavWriter::createTempoTestFixture(fixtureOctave140, 440.0, 10.0, 140.0, 0.80f, 48000);
+    std::cout << "  Generated " << fixtureOctave140 << std::endl;
+
+    // 14. Fixture Tempo Excessive: 150 BPM (+25.0%), 440 Hz, 10.0s
+    std::string fixtureExc150 = (outputDir / "fixture_tempo_excessive_150bpm.wav").string();
+    pulse::audio::WavWriter::createTempoTestFixture(fixtureExc150, 440.0, 10.0, 150.0, 0.80f, 48000);
+    std::cout << "  Generated " << fixtureExc150 << std::endl;
+
     // Also populate golden-set
     std::filesystem::path goldenDir = "tests/golden-set";
     std::filesystem::create_directories(goldenDir);

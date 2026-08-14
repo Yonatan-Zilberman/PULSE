@@ -1,6 +1,7 @@
 #include "../include/AudioEngine.h"
 #include "../include/AudioDecoder.h"
 #include "../include/WavWriter.h"
+#include "../include/TempoStrategy.h"
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -25,6 +26,11 @@ void printUsage(const char* progName) {
               << "  --no-align-beats            Disable musical beat alignment\n"
               << "  --snap-to-bar               Snap transition start to closest bar downbeat (default: enabled)\n"
               << "  --no-snap-to-bar            Disable downbeat bar snapping (snap to beat instead)\n"
+              << "  --tempo-strategy <mode>     Tempo strategy: source (default), dest, master, none, auto\n"
+              << "  --tempo-target <bpm>        Target BPM for master tempo strategy\n"
+              << "  --target-bpm <bpm>          Alias for --tempo-target\n"
+              << "  --max-stretch-pct <pct>     Max allowable tempo stretch percentage before rejection (default: 6.0)\n"
+              << "  --force-stretch             Override extreme stretch rejection for testing\n"
               << "  --duration <sec>            Total rendered mix duration (default: auto)\n"
               << "  --out <path.wav>            Output rendered WAV path (default: output_mix.wav)\n"
               << "  --out-audio <path.wav>      Alias for --out\n"
@@ -70,6 +76,12 @@ int main(int argc, char* argv[]) {
     bool alignBeats = true;
     bool snapToBar = true;
 
+    // Tempo Strategy Options
+    std::string tempoStrategyStr = "source";
+    double targetMasterBpm = 0.0;
+    double maxStretchPct = 6.0;
+    bool forceStretch = false;
+
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
         if (arg == "--deck-a" && i + 1 < argc) {
@@ -90,6 +102,14 @@ int main(int argc, char* argv[]) {
             snapToBar = true;
         } else if (arg == "--no-snap-to-bar") {
             snapToBar = false;
+        } else if (arg == "--tempo-strategy" && i + 1 < argc) {
+            tempoStrategyStr = argv[++i];
+        } else if ((arg == "--tempo-target" || arg == "--target-bpm") && i + 1 < argc) {
+            targetMasterBpm = std::stod(argv[++i]);
+        } else if (arg == "--max-stretch-pct" && i + 1 < argc) {
+            maxStretchPct = std::stod(argv[++i]);
+        } else if (arg == "--force-stretch") {
+            forceStretch = true;
         } else if ((arg == "--out" || arg == "--out-audio") && i + 1 < argc) {
             outAudioPath = argv[++i];
         } else if ((arg == "--report" || arg == "--out-json") && i + 1 < argc) {
@@ -117,6 +137,7 @@ int main(int argc, char* argv[]) {
               << "Deck B Input:       " << deckBPath << "\n"
               << "Transition Length:  " << transitionDuration << "s\n"
               << "Beat Alignment:     " << (alignBeats ? (snapToBar ? "Downbeat Bar Snap" : "Beat Snap") : "Disabled") << "\n"
+              << "Tempo Strategy:     " << tempoStrategyStr << " (Max Stretch: " << maxStretchPct << "%)\n"
               << "Output Audio:       " << outAudioPath << "\n"
               << "Output Report:      " << outReportPath << "\n"
               << "----------------------------------------------------------------\n";
@@ -155,29 +176,61 @@ int main(int argc, char* argv[]) {
               << "Peak: " << metaB.peakAmplitude << " (" << metaB.maxPeakDb << " dB) | "
               << "BPM: " << metaB.detectedBpm << " (Conf: " << metaB.tempoProfile.confidence << ")\n";
 
-    // 4. Calculate Transition Planning, Beat Alignment & Timing
-    double durA = metaA.durationSeconds;
-    double durB = metaB.durationSeconds;
-    double actualTransDuration = std::max(0.1, std::min(transitionDuration, std::min(durA, durB)));
+    // 4. Evaluate Bounded Tempo Strategy
+    auto strategyMode = pulse::audio::TempoStrategy::parseModeString(tempoStrategyStr);
+    auto tempoDecision = pulse::audio::TempoStrategy::evaluate(
+        metaA.detectedBpm,
+        metaB.detectedBpm,
+        metaA.tempoProfile.alternativeHypotheses,
+        metaB.tempoProfile.alternativeHypotheses,
+        strategyMode,
+        targetMasterBpm,
+        maxStretchPct,
+        forceStretch
+    );
+
+    std::cout << "Tempo Strategy Evaluation:\n"
+              << "  Strategy Decision:  " << tempoDecision.strategy << "\n"
+              << "  Deck A Tempo Ratio: " << tempoDecision.effectiveDeckATempoRatio << "\n"
+              << "  Deck B Tempo Ratio: " << tempoDecision.effectiveDeckBTempoRatio << "\n"
+              << "  BPM Delta:          " << tempoDecision.bpmDeltaPercent << "%\n"
+              << "  Octave Jump:        " << (tempoDecision.octaveJumpApplied ? "YES" : "NO") << "\n"
+              << "  Artifact Risk:      " << tempoDecision.artifactRiskScore << "\n"
+              << "  Exceeded Limit:     " << (tempoDecision.stretchExceededThreshold ? "YES (PENALIZED/REJECTED)" : "NO") << "\n"
+              << "  Recommended Type:   " << tempoDecision.recommendedTransitionType << "\n";
+
+    if (tempoDecision.stretchExceededThreshold && !forceStretch) {
+        std::cout << "  ⚠️ WARNING: " << tempoDecision.rejectionReason << "\n"
+                  << "  Switching transition type from eq_crossfade to " << tempoDecision.recommendedTransitionType << ".\n";
+    }
+
+    // Configure Deck Players with evaluated tempo ratios
+    deckA->setTempoRatio(tempoDecision.effectiveDeckATempoRatio);
+    deckB->setTempoRatio(tempoDecision.effectiveDeckBTempoRatio);
+
+    // 5. Calculate Transition Planning, Beat Alignment & Timing
+    double effectiveDurA = metaA.durationSeconds / tempoDecision.effectiveDeckATempoRatio;
+    double effectiveDurB = metaB.durationSeconds / tempoDecision.effectiveDeckBTempoRatio;
+    double actualTransDuration = std::max(0.1, std::min(transitionDuration, std::min(effectiveDurA, effectiveDurB)));
 
     double rawTransStartSec = (customTransitionStart >= 0.0)
         ? customTransitionStart
-        : std::max(0.0, durA - actualTransDuration);
+        : std::max(0.0, effectiveDurA - actualTransDuration);
 
     std::string alignmentMode = "none";
     double alignedBeatASec = rawTransStartSec;
     double alignedCueBSec = 0.0;
     double phaseOffsetSec = 0.0;
-    double tempoRatio = metaB.detectedBpm / (metaA.detectedBpm > 0.0 ? metaA.detectedBpm : 120.0);
 
     if (alignBeats) {
         if (snapToBar && !metaA.tempoProfile.downbeatPositions.empty()) {
             alignmentMode = "downbeat_snap";
             // Find downbeat on or immediately preceding rawTransStartSec
-            double bestDownbeat = metaA.tempoProfile.downbeatPositions.front();
+            double bestDownbeat = metaA.tempoProfile.downbeatPositions.front() / tempoDecision.effectiveDeckATempoRatio;
             for (double db : metaA.tempoProfile.downbeatPositions) {
-                if (db <= rawTransStartSec) {
-                    bestDownbeat = db;
+                double scaledDb = db / tempoDecision.effectiveDeckATempoRatio;
+                if (scaledDb <= rawTransStartSec) {
+                    bestDownbeat = scaledDb;
                 } else {
                     break;
                 }
@@ -185,10 +238,11 @@ int main(int argc, char* argv[]) {
             alignedBeatASec = bestDownbeat;
         } else if (!metaA.tempoProfile.beatPositions.empty()) {
             alignmentMode = "beat_snap";
-            double bestBeat = metaA.tempoProfile.beatPositions.front();
+            double bestBeat = metaA.tempoProfile.beatPositions.front() / tempoDecision.effectiveDeckATempoRatio;
             for (double bp : metaA.tempoProfile.beatPositions) {
-                if (bp <= rawTransStartSec) {
-                    bestBeat = bp;
+                double scaledBp = bp / tempoDecision.effectiveDeckATempoRatio;
+                if (scaledBp <= rawTransStartSec) {
+                    bestBeat = scaledBp;
                 } else {
                     break;
                 }
@@ -201,11 +255,11 @@ int main(int argc, char* argv[]) {
 
         // Align Deck B cue point to first downbeat / beat
         if (snapToBar && !metaB.tempoProfile.downbeatPositions.empty()) {
-            alignedCueBSec = metaB.tempoProfile.downbeatPositions.front();
+            alignedCueBSec = metaB.tempoProfile.downbeatPositions.front() / tempoDecision.effectiveDeckBTempoRatio;
         } else if (!metaB.tempoProfile.beatPositions.empty()) {
-            alignedCueBSec = metaB.tempoProfile.beatPositions.front();
+            alignedCueBSec = metaB.tempoProfile.beatPositions.front() / tempoDecision.effectiveDeckBTempoRatio;
         } else {
-            alignedCueBSec = metaB.tempoProfile.gridOffsetSeconds;
+            alignedCueBSec = metaB.tempoProfile.gridOffsetSeconds / tempoDecision.effectiveDeckBTempoRatio;
         }
 
         phaseOffsetSec = metaA.tempoProfile.gridOffsetSeconds - metaB.tempoProfile.gridOffsetSeconds;
@@ -214,7 +268,7 @@ int main(int argc, char* argv[]) {
     double transStartSec = alignedBeatASec;
     double totalRenderSec = (customTotalDuration > 0.0)
         ? customTotalDuration
-        : (transStartSec + durB - alignedCueBSec);
+        : (transStartSec + effectiveDurB - alignedCueBSec);
 
     std::cout << "Executing transition:\n"
               << "  Alignment Mode:     " << alignmentMode << "\n"
@@ -225,7 +279,7 @@ int main(int argc, char* argv[]) {
               << "  Total Render Mix:   " << totalRenderSec << "s\n"
               << "----------------------------------------------------------------\n";
 
-    // 5. Setup Engine Initial State
+    // 6. Setup Engine Initial State
     auto* mixer = engine.getMixer();
     auto* transExec = engine.getTransitionExecutor();
 
@@ -235,10 +289,10 @@ int main(int argc, char* argv[]) {
     deckA->setPlaybackPosition(0.0);
     deckA->setPlaying(true);
 
-    deckB->setPlaybackPosition(alignedCueBSec);
+    deckB->setPlaybackPosition(alignedCueBSec * tempoDecision.effectiveDeckBTempoRatio);
     deckB->setPlaying(false);
 
-    // 6. Offline Block-by-Block Mix Rendering
+    // 7. Offline Block-by-Block Mix Rendering
     uint32_t sampleRate = config.sample_rate;
     uint32_t blockSize = config.buffer_size;
     uint32_t channels = config.channel_count;
@@ -255,7 +309,7 @@ int main(int argc, char* argv[]) {
     while (currentTime < totalRenderSec) {
         // Trigger Deck B playback and transition executor when reaching transition timestamp
         if (currentTime >= transStartSec && !transitionTriggered) {
-            deckB->setPlaybackPosition(alignedCueBSec);
+            deckB->setPlaybackPosition(alignedCueBSec * tempoDecision.effectiveDeckBTempoRatio);
             deckB->setPlaying(true);
             TransitionCommandC cmd{0, 1, actualTransDuration, 1};
             transExec->startTransition(cmd);
@@ -280,7 +334,7 @@ int main(int argc, char* argv[]) {
     uint64_t renderedFrames = renderedMaster.size() / channels;
     double actualRenderedDuration = static_cast<double>(renderedFrames) / sampleRate;
 
-    // 7. Analyze Rendered Output
+    // 8. Analyze Rendered Output
     float maxPeakOut = 0.0f;
     for (float sample : renderedMaster) {
         float absVal = std::abs(sample);
@@ -297,14 +351,14 @@ int main(int argc, char* argv[]) {
               << "  Max Peak Amplitude: " << maxPeakOut << " (" << maxPeakDb << " dB)\n"
               << "  Clipping Detected:  " << (clippingDetected ? "YES (LIMITED)" : "NO") << "\n";
 
-    // 8. Write Master WAV Output
+    // 9. Write Master WAV Output
     std::cout << "Writing master audio artifact: " << outAudioPath << "..." << std::endl;
     if (!pulse::audio::WavWriter::writeWav16(outAudioPath, renderedMaster.data(), renderedFrames, sampleRate, channels)) {
         std::cerr << "Error: Failed to write output WAV file: " << outAudioPath << "\n";
         return 1;
     }
 
-    // 9. Write JSON Execution Report
+    // 10. Write JSON Execution Report
     std::cout << "Emitting JSON telemetry report: " << outReportPath << "..." << std::endl;
     std::ofstream reportFile(outReportPath);
     if (!reportFile.is_open()) {
@@ -339,15 +393,27 @@ int main(int argc, char* argv[]) {
                << "    \"is_variable_tempo\": " << (metaB.tempoProfile.isVariableTempo ? "true" : "false") << ",\n"
                << "    \"peak_amplitude\": " << std::fixed << std::setprecision(4) << metaB.peakAmplitude << "\n"
                << "  },\n"
+               << "  \"tempo_matching\": {\n"
+               << "    \"strategy\": \"" << tempoDecision.strategy << "\",\n"
+               << "    \"source_native_bpm\": " << std::fixed << std::setprecision(1) << tempoDecision.sourceNativeBpm << ",\n"
+               << "    \"destination_native_bpm\": " << std::fixed << std::setprecision(1) << tempoDecision.destNativeBpm << ",\n"
+               << "    \"effective_tempo_ratio\": " << std::fixed << std::setprecision(4) << tempoDecision.effectiveTempoRatio << ",\n"
+               << "    \"bpm_delta_percent\": " << std::fixed << std::setprecision(2) << tempoDecision.bpmDeltaPercent << ",\n"
+               << "    \"pitch_semitone_shift\": " << std::fixed << std::setprecision(1) << tempoDecision.pitchSemitoneShift << ",\n"
+               << "    \"octave_jump_applied\": " << (tempoDecision.octaveJumpApplied ? "true" : "false") << ",\n"
+               << "    \"artifact_risk_score\": " << std::fixed << std::setprecision(2) << tempoDecision.artifactRiskScore << ",\n"
+               << "    \"stretch_exceeded_threshold\": " << (tempoDecision.stretchExceededThreshold ? "true" : "false") << ",\n"
+               << "    \"rejection_reason\": " << (tempoDecision.rejectionReason.empty() ? "null" : ("\"" + formatJsonString(tempoDecision.rejectionReason) + "\"")) << "\n"
+               << "  },\n"
                << "  \"beat_alignment\": {\n"
                << "    \"alignment_mode\": \"" << alignmentMode << "\",\n"
                << "    \"deck_a_aligned_beat_sec\": " << std::fixed << std::setprecision(2) << alignedBeatASec << ",\n"
                << "    \"deck_b_aligned_cue_sec\": " << std::fixed << std::setprecision(2) << alignedCueBSec << ",\n"
                << "    \"phase_offset_sec\": " << std::fixed << std::setprecision(2) << phaseOffsetSec << ",\n"
-               << "    \"tempo_ratio\": " << std::fixed << std::setprecision(2) << tempoRatio << "\n"
+               << "    \"tempo_ratio\": " << std::fixed << std::setprecision(2) << tempoDecision.effectiveTempoRatio << "\n"
                << "  },\n"
                << "  \"transition\": {\n"
-               << "    \"type\": \"eq_crossfade\",\n"
+               << "    \"type\": \"" << (tempoDecision.stretchExceededThreshold && !forceStretch ? tempoDecision.recommendedTransitionType : "eq_crossfade") << "\",\n"
                << "    \"duration_seconds\": " << std::fixed << std::setprecision(2) << actualTransDuration << ",\n"
                << "    \"start_position_seconds\": " << std::fixed << std::setprecision(2) << transStartSec << "\n"
                << "  },\n"

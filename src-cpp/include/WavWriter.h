@@ -43,6 +43,16 @@ public:
                                        uint32_t sampleRate = 48000);
 
     /**
+     * @brief Generates a dedicated tempo test fixture with precise tone and transients.
+     */
+    static bool createTempoTestFixture(const std::string& filePath,
+                                       double frequencyHz,
+                                       double durationSec,
+                                       double bpm,
+                                       float amplitude = 0.80f,
+                                       uint32_t sampleRate = 48000);
+
+    /**
      * @brief Generates an ambiguous tempo fixture with 70 BPM strong pulses and 140 BPM alternating subdivisions.
      */
     static bool createAmbiguousFixture(const std::string& filePath,

@@ -103,6 +103,44 @@ bool WavWriter::createSyntheticFixture(const std::string& filePath,
     return writeWav16(filePath, samples.data(), totalFrames, sampleRate, channels);
 }
 
+bool WavWriter::createTempoTestFixture(const std::string& filePath,
+                                       double frequencyHz,
+                                       double durationSec,
+                                       double bpm,
+                                       float amplitude,
+                                       uint32_t sampleRate) {
+    if (durationSec <= 0.0 || sampleRate == 0 || bpm <= 0.0) {
+        return false;
+    }
+
+    uint64_t totalFrames = static_cast<uint64_t>(durationSec * sampleRate);
+    uint32_t channels = 2;
+    std::vector<float> samples(totalFrames * channels);
+
+    double beatIntervalFrames = (60.0 / bpm) * sampleRate;
+    constexpr double twoPi = 6.28318530717958647692;
+
+    for (uint64_t f = 0; f < totalFrames; ++f) {
+        double timeSec = static_cast<double>(f) / sampleRate;
+
+        // Pure reference sinusoidal tone (e.g. 440 Hz for pitch checking)
+        double baseSine = std::sin(twoPi * frequencyHz * timeSec);
+
+        // Percussive transient impulse at exact beat intervals
+        double beatPhase = std::fmod(static_cast<double>(f), beatIntervalFrames);
+        double clickDecay = std::exp(-beatPhase / (sampleRate * 0.015)); // 15ms sharp transient
+        double click = std::sin(twoPi * 1500.0 * timeSec) * clickDecay * 0.5;
+
+        float value = static_cast<float>((baseSine * 0.5 + click) * amplitude);
+        value = std::clamp(value, -1.0f, 1.0f);
+
+        samples[f * channels + 0] = value;
+        samples[f * channels + 1] = value;
+    }
+
+    return writeWav16(filePath, samples.data(), totalFrames, sampleRate, channels);
+}
+
 bool WavWriter::createAmbiguousFixture(const std::string& filePath,
                                        double frequencyHz,
                                        double durationSec,
