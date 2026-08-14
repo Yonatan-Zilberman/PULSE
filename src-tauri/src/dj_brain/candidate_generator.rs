@@ -118,8 +118,31 @@ impl CandidateGenerator {
     ) -> Vec<TransitionCandidate> {
         let tempo_comp = Self::evaluate_tempo(outgoing, incoming);
 
+        // 1. Dynamic Phrase Compatibility Evaluation
+        let base_phrase_score: f32 = if !outgoing.phrases.boundaries_8bar.is_empty()
+            && !incoming.phrases.boundaries_8bar.is_empty()
+        {
+            0.95
+        } else if !outgoing.phrases.boundaries_4bar.is_empty()
+            && !incoming.phrases.boundaries_4bar.is_empty()
+        {
+            0.90
+        } else if !outgoing.phrases.boundaries_4bar.is_empty()
+            || !incoming.phrases.boundaries_4bar.is_empty()
+        {
+            0.75
+        } else {
+            0.50
+        };
+
+        let stability_factor = outgoing
+            .mixability
+            .phrase_stability
+            .min(incoming.mixability.phrase_stability)
+            .clamp(0.5, 1.0);
+        let phrase_score = (base_phrase_score * stability_factor).clamp(0.0, 1.0);
+
         let harmonic_score = 0.90;
-        let phrase_score = 0.85;
         let energy_score = 0.88;
         let vocal_score = 0.90;
         let bass_score = 0.85;
@@ -145,15 +168,47 @@ impl CandidateGenerator {
             overall_score,
         };
 
+        // 2. Phrase-Aligned Duration Calculation
+        let target_bpm = if outgoing.tempo.bpm > 0.0 {
+            outgoing.tempo.bpm
+        } else {
+            120.0
+        };
+        let sec_per_bar = 4.0 * (60.0 / target_bpm);
+
         let duration_seconds =
             if tempo_comp.recommended_transition_type == TransitionType::EnergyCut {
                 2.0
             } else {
-                15.0
+                let dur_8bar = 8.0 * sec_per_bar;
+                if outgoing.metadata.duration_seconds >= dur_8bar {
+                    (dur_8bar * 100.0).round() / 100.0
+                } else {
+                    let dur_4bar = 4.0 * sec_per_bar;
+                    (dur_4bar.min(outgoing.metadata.duration_seconds * 0.5) * 100.0).round() / 100.0
+                }
             };
 
-        let exit_seconds = (outgoing.metadata.duration_seconds - duration_seconds).max(0.0);
-        let entry_seconds = 0.0;
+        // 3. Phrase-Aligned Exit and Entry Alignment
+        let mut exit_seconds = (outgoing.metadata.duration_seconds - duration_seconds).max(0.0);
+        if tempo_comp.recommended_transition_type != TransitionType::EnergyCut
+            && !outgoing.phrases.boundaries_8bar.is_empty()
+        {
+            let mut best_boundary = outgoing.phrases.boundaries_8bar[0];
+            for &b in &outgoing.phrases.boundaries_8bar {
+                if b + duration_seconds <= outgoing.metadata.duration_seconds + 0.05 {
+                    best_boundary = b;
+                }
+            }
+            exit_seconds = best_boundary;
+        }
+
+        let entry_seconds = incoming
+            .phrases
+            .boundaries_8bar
+            .first()
+            .copied()
+            .unwrap_or(0.0);
 
         let candidate = TransitionCandidate {
             source_track_id: outgoing.id.clone(),
@@ -314,6 +369,42 @@ mod tests {
         assert_eq!(candidate.score.bpm_score, 0.85);
         assert_eq!(candidate.artifact_risk, 0.05);
         assert_eq!(candidate.transition_type, TransitionType::BreakdownBlend);
+        assert!(candidate.score.is_valid());
+    }
+
+    #[test]
+    fn test_phrase_aware_candidate_generation() {
+        let track_a = make_test_profile("trk-a", 120.0, vec![]);
+        let track_b = make_test_profile("trk-b", 120.0, vec![]);
+
+        let generator = CandidateGenerator::new();
+        let candidates = generator.generate_candidates(&track_a, &track_b);
+
+        assert_eq!(candidates.len(), 1);
+        let candidate = &candidates[0];
+
+        // 8 bars at 120 BPM = 16.0s
+        assert_eq!(candidate.duration_seconds, 16.0);
+        assert!(candidate.score.phrase_score >= 0.85);
+        assert!(candidate.score.is_valid());
+    }
+
+    #[test]
+    fn test_empty_phrase_fallback_candidate_generation() {
+        let mut track_a = make_test_profile("trk-a", 120.0, vec![]);
+        let mut track_b = make_test_profile("trk-b", 120.0, vec![]);
+        track_a.phrases.boundaries_8bar.clear();
+        track_a.phrases.boundaries_4bar.clear();
+        track_b.phrases.boundaries_8bar.clear();
+        track_b.phrases.boundaries_4bar.clear();
+
+        let generator = CandidateGenerator::new();
+        let candidates = generator.generate_candidates(&track_a, &track_b);
+
+        assert_eq!(candidates.len(), 1);
+        let candidate = &candidates[0];
+
+        assert!(candidate.score.phrase_score <= 0.60);
         assert!(candidate.score.is_valid());
     }
 }
