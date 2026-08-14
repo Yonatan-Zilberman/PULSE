@@ -62,7 +62,8 @@ coverage/
 
 # Generated audio outputs, sets, and snippets
 tests/audio/*.wav
+tests/audio/*.json
 tests/audio/transitions/
-tests/audio/*_report.json
-tests/audio/*_mix*.wav
-tests/golden-set/
+!tests/audio/.gitkeep
+tests/golden-set/*
+!tests/golden-set/.gitkeep
