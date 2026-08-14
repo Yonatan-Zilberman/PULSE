@@ -50,6 +50,7 @@
 
 | Quality Gate | Command | Scope |
 |---|---|---|
+| **Licensing & Dependency Audit** | `pnpm audit:licenses` (or `./scripts/audit_dependencies.sh`) | Validates all manifests against SPDX whitelist & zero-cloud invariants |
 | **Frontend Linting** | `pnpm lint` | ESLint across TypeScript & JSX |
 | **Frontend Typecheck & Build** | `pnpm build` | `tsc` compilation & Vite bundling |
 | **Frontend Unit Tests** | `pnpm test` | Vitest React & Zustand store tests |
@@ -62,6 +63,8 @@
 
 ## 4. Invariants & Zero-Cost Compliance Audit
 
-- **Zero Cloud / Local-First:** All dependencies, crate manifests, and configurations run 100% locally with no telemetry, cloud endpoints, or external API requirements.
-- **Licensing Audit:** All adopted dependencies (Tauri, React, Zustand, Rusqlite, SoundTouch LGPL, ONNX Runtime MIT) comply with zero-cost open-source distribution rules.
+- **Master Dependency Registry:** Formal single-source-of-truth established in [DEPENDENCIES.md](DEPENDENCIES.md) and [Docs/Pulse Dependency Audit.md](Docs/Pulse%20Dependency%20Audit.md) covering all 9 technical domains.
+- **Zero Cloud / Local-First:** All dependencies, crate manifests, and configurations run 100% locally with zero telemetry, zero cloud endpoints, and zero external API requirements. Desktop shell enforces `default-src 'self'` CSP.
+- **Licensing Audit:** All adopted dependencies (Tauri, React, Zustand, Rusqlite, SoundTouch LGPL, ONNX Runtime MIT) comply with zero-cost open-source distribution rules. SoundTouch is isolated via dynamic `.dylib` linkage.
+- **Distribution Cost Segregation:** Apple Developer Program membership ($99/year) is documented strictly as an optional OS distribution / Gatekeeper notarization cost for signed DMGs. Development and local builds run at **$0 cost**.
 - **Real-Time Safety:** Audio callback processing in `src-cpp/` strictly isolates DSP from dynamic memory allocation, file I/O, and ML inference.

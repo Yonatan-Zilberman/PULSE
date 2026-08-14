@@ -48,6 +48,11 @@ pnpm install
 
 ### 2. Verify Quality Gates & Test Suites
 
+#### Licensing & Dependency Compliance Gate:
+```bash
+pnpm audit:licenses   # Or directly: ./scripts/audit_dependencies.sh
+```
+
 #### Frontend Linting, Build & Tests:
 ```bash
 pnpm lint          # Run ESLint across TypeScript / React
@@ -82,20 +87,23 @@ clang++ -std=c++20 -Wall -Wextra -Wpedantic -Isrc-cpp/include \
 
 ```
 Pulse/
-├── .github/workflows/ci.yml   # Multi-language CI pipeline
+├── .github/workflows/ci.yml   # Multi-language CI pipeline (includes audit gate)
 ├── .gitignore                 # Artifact & cache ignore rules
 ├── BASELINE.md                # Engineering baseline & environment report
+├── DEPENDENCIES.md            # Master dependency & licensing compliance registry
 ├── README.md                  # Project overview & quickstart
 ├── package.json               # Node & Tauri frontend scripts
 ├── tsconfig.json              # TypeScript root configuration
 ├── vite.config.ts             # Vite bundler & test harness
+├── scripts/
+│   └── audit_dependencies.sh  # Automated zero-cost & license verification script
 ├── src/                       # React 18 UI layer
 │   ├── components/            # AutoDJ, Waveform, Queue, TransitionPreview, Mixer
 │   ├── state/                 # Zustand store (useAppStore.ts)
 │   └── App.tsx
 ├── src-tauri/                 # Rust core application tier
 │   ├── Cargo.toml             # Rust dependencies (Tauri 2, Rusqlite, Tokio)
-│   ├── tauri.conf.json        # Tauri desktop bundle configuration
+│   ├── tauri.conf.json        # Tauri desktop bundle configuration & offline CSP
 │   └── src/
 │       ├── dj_brain/          # Set planner, candidate generator, transition graph
 │       ├── analysis/          # BPM, beatgrid, musical key, structure detectors
@@ -116,10 +124,14 @@ Pulse/
 
 ## Zero-Cost Licensing & Invariants
 
-All dependencies in PULSE are strictly free and permissively licensed:
-- **Tauri 2 & React 18:** MIT / Apache-2.0.
-- **Rust Core & Crates:** MIT / Apache-2.0.
-- **JUCE 8:** Free under JUCE Personal tier / AGPLv3.
-- **SoundTouch:** LGPLv2.1 (dynamically linked).
-- **ONNX Runtime:** MIT.
-- **Zero Cloud:** No network calls, telemetry, or remote streaming APIs are configured or permitted.
+PULSE strictly mandates zero recurring runtime costs, 100% offline execution, and full open-source license compatibility. All adopted and planned dependencies are formally cataloged and audited in [DEPENDENCIES.md](file:///Users/yonatanzilberman/Documents/Pulse/DEPENDENCIES.md):
+
+- **Tauri 2 & React 18:** `MIT / Apache-2.0`.
+- **Rust Core & Crates:** `MIT / Apache-2.0` (`tauri`, `serde`, `rusqlite`, `tokio`, `thiserror`).
+- **JUCE 8:** Free under `JUCE Personal Tier` (for revenue <$50k/year) or `AGPL-3.0-only` for open-source builds.
+- **SoundTouch:** `LGPL-2.1` dynamically linked (`.dylib`) to isolate relinking rights without forcing PULSE proprietary source release.
+- **ONNX Runtime:** `MIT` with `CoreMLExecutionProvider` for local Apple Silicon Neural Engine / GPU acceleration.
+- **Metadata & Artwork:** Embedded audio file tags only (`ID3v2`, `Vorbis`, `MP4 atoms`). Third-party scraping web APIs are strictly prohibited.
+- **Zero Cloud Invariant:** 0 external network sockets, 0 telemetry pings, 0 cloud endpoints. Content Security Policy (`CSP`) enforces `default-src 'self'`.
+- **Distribution Cost Segregation:** Apple Developer Program membership ($99/year) is documented strictly as an optional OS distribution / Gatekeeper notarization cost for signed DMGs. Development and local builds run at **$0 cost**.
+
