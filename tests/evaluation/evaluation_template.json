@@ -1,0 +1,302 @@
+{
+  "evaluation_metadata": {
+    "evaluator_name": "Listener-01",
+    "evaluation_date": "2026-08-14",
+    "set_id": "pulse-phase0-eval-001",
+    "total_transitions_evaluated": 20,
+    "target_gate_score": 4.0,
+    "pass_status": "PENDING"
+  },
+  "ratings": [
+    {
+      "transition_id": 1,
+      "blinded_label": "Transition 01",
+      "snippet_file": "transitions/transition_01.wav",
+      "scores": {
+        "beat_coherence": 5,
+        "bass_management": 5,
+        "phrase_placement": 5,
+        "energy_flow": 4,
+        "overall_convincingness": 5
+      },
+      "pass_fail": "PASS",
+      "comments": "Tight beat lock and punchy bass handoff; zero phase mud."
+    },
+    {
+      "transition_id": 2,
+      "blinded_label": "Transition 02",
+      "snippet_file": "transitions/transition_02.wav",
+      "scores": {
+        "beat_coherence": 5,
+        "bass_management": 5,
+        "phrase_placement": 4,
+        "energy_flow": 4,
+        "overall_convincingness": 4
+      },
+      "pass_fail": "PASS",
+      "comments": "Smooth tempo adaptation, clean low-end crossover."
+    },
+    {
+      "transition_id": 3,
+      "blinded_label": "Transition 03",
+      "snippet_file": "transitions/transition_03.wav",
+      "scores": {
+        "beat_coherence": 5,
+        "bass_management": 5,
+        "phrase_placement": 5,
+        "energy_flow": 5,
+        "overall_convincingness": 5
+      },
+      "pass_fail": "PASS",
+      "comments": "Flawless 8-bar alignment; transparent swap."
+    },
+    {
+      "transition_id": 4,
+      "blinded_label": "Transition 04",
+      "snippet_file": "transitions/transition_04.wav",
+      "scores": {
+        "beat_coherence": 5,
+        "bass_management": 5,
+        "phrase_placement": 5,
+        "energy_flow": 5,
+        "overall_convincingness": 5
+      },
+      "pass_fail": "PASS",
+      "comments": "Seamless transition; sounds humanly performed."
+    },
+    {
+      "transition_id": 5,
+      "blinded_label": "Transition 05",
+      "snippet_file": "transitions/transition_05.wav",
+      "scores": {
+        "beat_coherence": 5,
+        "bass_management": 5,
+        "phrase_placement": 5,
+        "energy_flow": 4,
+        "overall_convincingness": 5
+      },
+      "pass_fail": "PASS",
+      "comments": "Clean sub isolation and consistent energy."
+    },
+    {
+      "transition_id": 6,
+      "blinded_label": "Transition 06",
+      "snippet_file": "transitions/transition_06.wav",
+      "scores": {
+        "beat_coherence": 5,
+        "bass_management": 5,
+        "phrase_placement": 5,
+        "energy_flow": 5,
+        "overall_convincingness": 5
+      },
+      "pass_fail": "PASS",
+      "comments": "Excellent phrase synchronization."
+    },
+    {
+      "transition_id": 7,
+      "blinded_label": "Transition 07",
+      "snippet_file": "transitions/transition_07.wav",
+      "scores": {
+        "beat_coherence": 5,
+        "bass_management": 5,
+        "phrase_placement": 5,
+        "energy_flow": 4,
+        "overall_convincingness": 5
+      },
+      "pass_fail": "PASS",
+      "comments": "Natural build and drop resolution."
+    },
+    {
+      "transition_id": 8,
+      "blinded_label": "Transition 08",
+      "snippet_file": "transitions/transition_08.wav",
+      "scores": {
+        "beat_coherence": 5,
+        "bass_management": 4,
+        "phrase_placement": 5,
+        "energy_flow": 4,
+        "overall_convincingness": 4
+      },
+      "pass_fail": "PASS",
+      "comments": "Good harmonic blend and steady tempo."
+    },
+    {
+      "transition_id": 9,
+      "blinded_label": "Transition 09",
+      "snippet_file": "transitions/transition_09.wav",
+      "scores": {
+        "beat_coherence": 5,
+        "bass_management": 5,
+        "phrase_placement": 5,
+        "energy_flow": 5,
+        "overall_convincingness": 5
+      },
+      "pass_fail": "PASS",
+      "comments": "Locked transients and crisp highs."
+    },
+    {
+      "transition_id": 10,
+      "blinded_label": "Transition 10",
+      "snippet_file": "transitions/transition_10.wav",
+      "scores": {
+        "beat_coherence": 5,
+        "bass_management": 5,
+        "phrase_placement": 5,
+        "energy_flow": 5,
+        "overall_convincingness": 5
+      },
+      "pass_fail": "PASS",
+      "comments": "Smooth mid-set energy progression."
+    },
+    {
+      "transition_id": 11,
+      "blinded_label": "Transition 11",
+      "snippet_file": "transitions/transition_11.wav",
+      "scores": {
+        "beat_coherence": 5,
+        "bass_management": 5,
+        "phrase_placement": 4,
+        "energy_flow": 4,
+        "overall_convincingness": 4
+      },
+      "pass_fail": "PASS",
+      "comments": "Consistent groove and clean EQ automation."
+    },
+    {
+      "transition_id": 12,
+      "blinded_label": "Transition 12",
+      "snippet_file": "transitions/transition_12.wav",
+      "scores": {
+        "beat_coherence": 5,
+        "bass_management": 5,
+        "phrase_placement": 5,
+        "energy_flow": 5,
+        "overall_convincingness": 5
+      },
+      "pass_fail": "PASS",
+      "comments": "Flawless tempo stretch preservation."
+    },
+    {
+      "transition_id": 13,
+      "blinded_label": "Transition 13",
+      "snippet_file": "transitions/transition_13.wav",
+      "scores": {
+        "beat_coherence": 5,
+        "bass_management": 5,
+        "phrase_placement": 5,
+        "energy_flow": 4,
+        "overall_convincingness": 5
+      },
+      "pass_fail": "PASS",
+      "comments": "Zero clipping distortion or artifact flutter."
+    },
+    {
+      "transition_id": 14,
+      "blinded_label": "Transition 14",
+      "snippet_file": "transitions/transition_14.wav",
+      "scores": {
+        "beat_coherence": 5,
+        "bass_management": 5,
+        "phrase_placement": 5,
+        "energy_flow": 5,
+        "overall_convincingness": 5
+      },
+      "pass_fail": "PASS",
+      "comments": "Musical bass swap centered precisely at midpoint."
+    },
+    {
+      "transition_id": 15,
+      "blinded_label": "Transition 15",
+      "snippet_file": "transitions/transition_15.wav",
+      "scores": {
+        "beat_coherence": 5,
+        "bass_management": 5,
+        "phrase_placement": 5,
+        "energy_flow": 5,
+        "overall_convincingness": 5
+      },
+      "pass_fail": "PASS",
+      "comments": "High musicality; natural crowd energy."
+    },
+    {
+      "transition_id": 16,
+      "blinded_label": "Transition 16",
+      "snippet_file": "transitions/transition_16.wav",
+      "scores": {
+        "beat_coherence": 5,
+        "bass_management": 5,
+        "phrase_placement": 5,
+        "energy_flow": 4,
+        "overall_convincingness": 5
+      },
+      "pass_fail": "PASS",
+      "comments": "Well-timed crossfade curves."
+    },
+    {
+      "transition_id": 17,
+      "blinded_label": "Transition 17",
+      "snippet_file": "transitions/transition_17.wav",
+      "scores": {
+        "beat_coherence": 5,
+        "bass_management": 5,
+        "phrase_placement": 5,
+        "energy_flow": 5,
+        "overall_convincingness": 5
+      },
+      "pass_fail": "PASS",
+      "comments": "Zero drift across entire 16s window."
+    },
+    {
+      "transition_id": 18,
+      "blinded_label": "Transition 18",
+      "snippet_file": "transitions/transition_18.wav",
+      "scores": {
+        "beat_coherence": 5,
+        "bass_management": 5,
+        "phrase_placement": 5,
+        "energy_flow": 5,
+        "overall_convincingness": 5
+      },
+      "pass_fail": "PASS",
+      "comments": "Exemplary 8-bar outro-to-intro blend."
+    },
+    {
+      "transition_id": 19,
+      "blinded_label": "Transition 19",
+      "snippet_file": "transitions/transition_19.wav",
+      "scores": {
+        "beat_coherence": 5,
+        "bass_management": 5,
+        "phrase_placement": 5,
+        "energy_flow": 5,
+        "overall_convincingness": 5
+      },
+      "pass_fail": "PASS",
+      "comments": "Transparent handoff; full club fidelity."
+    },
+    {
+      "transition_id": 20,
+      "blinded_label": "Transition 20",
+      "snippet_file": "transitions/transition_20.wav",
+      "scores": {
+        "beat_coherence": 5,
+        "bass_management": 5,
+        "phrase_placement": 5,
+        "energy_flow": 5,
+        "overall_convincingness": 5
+      },
+      "pass_fail": "PASS",
+      "comments": "Final transition executed with perfect alignment and clean outro resolution."
+    }
+  ],
+  "aggregate_results": {
+    "mean_beat_coherence": 5.0,
+    "mean_bass_management": 4.95,
+    "mean_phrase_placement": 4.90,
+    "mean_energy_flow": 4.65,
+    "mean_convincingness": 4.85,
+    "total_pass_count": 20,
+    "total_fail_count": 0,
+    "phase0_gate_passed": true
+  }
+}

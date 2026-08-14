@@ -75,23 +75,33 @@ cmake --build src-cpp/build
 ctest --test-dir src-cpp/build --output-on-failure
 ```
 
-#### Phase 0 CLI Audio-Engine Prototype:
+#### Phase 0 CLI Audio-Engine Prototype & Multi-Track Set Mixer:
 ```bash
-# Generate deterministic test fixtures (steady, ambiguous, drifting, syncopated, multi-phrase, bass-heavy, hot 0dBFS):
-./src-cpp/build/generate_fixtures tests/audio
+# Generate deterministic test fixtures and 25-track golden corpus:
+./src-cpp/build/generate_fixtures tests/golden-set
 
-# Run prototype CLI offline phrase-aware transition mix with deterministic bass swapping:
+# Run automated 20-transition continuous mix across golden corpus:
 ./src-cpp/build/pulse_cli \
-  --deck-a tests/audio/fixture_bass_heavy_120bpm.wav \
-  --deck-b tests/audio/fixture_bass_heavy_122bpm.wav \
+  --track-dir tests/golden-set \
+  --min-transitions 20 \
   --phrase-aware \
   --phrase-bars 8 \
   --tempo-strategy source \
   --transition-strategy bass_swap \
-  --bass-swap-point 0.50 \
-  --out tests/audio/bass_swap_mix_out.wav \
-  --report tests/audio/bass_swap_report.json
+  --export-snippets \
+  --out tests/audio/phase0_master_set.wav \
+  --report tests/audio/phase0_set_report.json
 ```
+
+#### Phase 0 Feasibility Gate Blind Human-Rating Evaluation:
+```bash
+# Open the standalone offline evaluation player in your browser:
+open tests/evaluation/blind_rating_tool.html
+
+# Evaluation Rubric and Guidelines:
+# See tests/evaluation/RATING_RUBRIC.md for 5-dimension Likert anchors and pass criteria.
+```
+
 
 
 ---
