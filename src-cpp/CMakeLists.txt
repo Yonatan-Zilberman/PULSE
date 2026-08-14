@@ -212,3 +212,28 @@ if(APPLE)
     )
 endif()
 add_test(NAME CliBassSwapEndToEndTest COMMAND test_cli_bass_swap_e2e)
+
+add_executable(test_set_mixer_e2e tests/test_set_mixer_e2e.cpp)
+target_link_libraries(test_set_mixer_e2e PRIVATE pulse_audio_engine)
+if(APPLE)
+    target_link_libraries(test_set_mixer_e2e PRIVATE
+        "-framework CoreAudio"
+        "-framework AudioToolbox"
+        "-framework Accelerate"
+        "-framework CoreFoundation"
+    )
+endif()
+add_test(NAME SetMixerEndToEndTest COMMAND test_set_mixer_e2e)
+
+add_executable(test_cli_set_flags_e2e tests/test_cli_set_flags_e2e.cpp)
+target_link_libraries(test_cli_set_flags_e2e PRIVATE pulse_audio_engine)
+if(APPLE)
+    target_link_libraries(test_cli_set_flags_e2e PRIVATE
+        "-framework CoreAudio"
+        "-framework AudioToolbox"
+        "-framework Accelerate"
+        "-framework CoreFoundation"
+    )
+endif()
+add_test(NAME CliSetFlagsEndToEndTest COMMAND test_cli_set_flags_e2e)
+
