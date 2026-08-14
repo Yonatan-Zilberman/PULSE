@@ -115,7 +115,9 @@ This section exists specifically because the PRD requires the product to be free
 | **Apple code signing & notarization**         | Distributing a signed build outside of local/dev use | Apple Developer Program: **$99/year.** This is the one real, unavoidable cost in the entire stack — and it is a distribution cost, not a development or runtime cost.                                                                                                                                                                                                                                                                                                                                               | Call this out explicitly wherever "completely free" is stated publicly. Local/dev builds (ad-hoc signed, run on the developer's own machine) incur no cost at all. Treat notarization as a deliberate later decision tied to public distribution, not a Phase 0–5 requirement.                                                           |
 
 
-**Standing rule for future dependencies:** before adding any new library, model, or service, confirm (1) it runs fully offline, (2) it has no per-call/per-seat/revenue-tied fee, and (3) its license is compatible with however PULSE is ultimately distributed. Log the decision in this table.
+**Master Compliance Registry & Automated Gate:** All 9 technical domains, exact SPDX licenses, dynamic linking isolation mechanics (e.g. SoundTouch LGPLv2.1 `.dylib` isolation), and runtime network constraints are formally audited and maintained in [DEPENDENCIES.md](file:///Users/yonatanzilberman/Documents/Pulse/DEPENDENCIES.md) and verified via `./scripts/audit_dependencies.sh`.
+
+**Standing rule for future dependencies:** before adding any new library, model, or service, confirm (1) it runs fully offline, (2) it has no per-call/per-seat/revenue-tied fee, (3) its license is compatible with however PULSE is ultimately distributed, and (4) it is registered in `DEPENDENCIES.md`. Verify compliance via `pnpm audit:licenses`.
 
 ---
 
