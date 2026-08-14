@@ -8,10 +8,79 @@ namespace pulse::audio {
 DeckPlayer::DeckPlayer(uint8_t deckId)
     : deckId_(deckId),
       stretchEngine_(std::make_unique<TimeStretchEngine>()),
+      eqChannels_(2),
       inputBlockScratch_(4096 * 2, 0.0f),
-      outputBlockScratch_(4096 * 2, 0.0f) {}
+      outputBlockScratch_(4096 * 2, 0.0f) {
+    initCrossoverFilters(48000);
+}
 
 DeckPlayer::~DeckPlayer() = default;
+
+void DeckPlayer::initCrossoverFilters(uint32_t sampleRate) noexcept {
+    if (sampleRate == 0) sampleRate = 48000;
+
+    constexpr float kPi = 3.14159265358979323846f;
+    constexpr float kSqrt2 = 1.41421356237309504880f;
+
+    // 1. Low Crossover at 250 Hz (Butterworth Q = 1/sqrt(2))
+    float fLow = 250.0f;
+    float wLow = 2.0f * kPi * fLow / static_cast<float>(sampleRate);
+    float sinLow = std::sin(wLow);
+    float cosLow = std::cos(wLow);
+    float alphaLow = sinLow / (2.0f * (1.0f / kSqrt2)); // sinLow / sqrt(2)
+    float a0Low = 1.0f + alphaLow;
+
+    // 2nd-order Butterworth LP at 250 Hz
+    eqCoeffs_.coeffLpLow.b0 = (1.0f - cosLow) / (2.0f * a0Low);
+    eqCoeffs_.coeffLpLow.b1 = (1.0f - cosLow) / a0Low;
+    eqCoeffs_.coeffLpLow.b2 = (1.0f - cosLow) / (2.0f * a0Low);
+    eqCoeffs_.coeffLpLow.a1 = (-2.0f * cosLow) / a0Low;
+    eqCoeffs_.coeffLpLow.a2 = (1.0f - alphaLow) / a0Low;
+
+    // 2nd-order Butterworth HP at 250 Hz
+    eqCoeffs_.coeffHpLow.b0 = (1.0f + cosLow) / (2.0f * a0Low);
+    eqCoeffs_.coeffHpLow.b1 = -(1.0f + cosLow) / a0Low;
+    eqCoeffs_.coeffHpLow.b2 = (1.0f + cosLow) / (2.0f * a0Low);
+    eqCoeffs_.coeffHpLow.a1 = (-2.0f * cosLow) / a0Low;
+    eqCoeffs_.coeffHpLow.a2 = (1.0f - alphaLow) / a0Low;
+
+    // 2. High Crossover at 3500 Hz (Butterworth Q = 1/sqrt(2))
+    float fHigh = 3500.0f;
+    float wHigh = 2.0f * kPi * fHigh / static_cast<float>(sampleRate);
+    float sinHigh = std::sin(wHigh);
+    float cosHigh = std::cos(wHigh);
+    float alphaHigh = sinHigh / (2.0f * (1.0f / kSqrt2)); // sinHigh / sqrt(2)
+    float a0High = 1.0f + alphaHigh;
+
+    // 2nd-order Butterworth LP at 3500 Hz (Mid band)
+    eqCoeffs_.coeffLpHigh.b0 = (1.0f - cosHigh) / (2.0f * a0High);
+    eqCoeffs_.coeffLpHigh.b1 = (1.0f - cosHigh) / a0High;
+    eqCoeffs_.coeffLpHigh.b2 = (1.0f - cosHigh) / (2.0f * a0High);
+    eqCoeffs_.coeffLpHigh.a1 = (-2.0f * cosHigh) / a0High;
+    eqCoeffs_.coeffLpHigh.a2 = (1.0f - alphaHigh) / a0High;
+
+    // 2nd-order Butterworth HP at 3500 Hz (High band)
+    eqCoeffs_.coeffHpHigh.b0 = (1.0f + cosHigh) / (2.0f * a0High);
+    eqCoeffs_.coeffHpHigh.b1 = -(1.0f + cosHigh) / a0High;
+    eqCoeffs_.coeffHpHigh.b2 = (1.0f + cosHigh) / (2.0f * a0High);
+    eqCoeffs_.coeffHpHigh.a1 = (-2.0f * cosHigh) / a0High;
+    eqCoeffs_.coeffHpHigh.a2 = (1.0f - alphaHigh) / a0High;
+
+    // 2nd-order All-Pass at 3500 Hz (aligns low band phase with mid/high)
+    eqCoeffs_.coeffApHigh.b0 = (1.0f - alphaHigh) / a0High;
+    eqCoeffs_.coeffApHigh.b1 = (-2.0f * cosHigh) / a0High;
+    eqCoeffs_.coeffApHigh.b2 = 1.0f;
+    eqCoeffs_.coeffApHigh.a1 = (-2.0f * cosHigh) / a0High;
+    eqCoeffs_.coeffApHigh.a2 = (1.0f - alphaHigh) / a0High;
+
+    resetEq();
+}
+
+void DeckPlayer::resetEq() noexcept {
+    for (auto& eq : eqChannels_) {
+        eq.reset();
+    }
+}
 
 bool DeckPlayer::loadFile(const std::string& filePath) {
     DecodedAudio decoded;
@@ -35,6 +104,8 @@ bool DeckPlayer::loadFile(const std::string& filePath) {
     stretchEngine_->initialize(stretchCfg);
     stretchEngine_->clear();
 
+    initCrossoverFilters(loadedAudio_.sampleRate);
+
     size_t scratchSize = std::max(4096u, loadedAudio_.sampleRate / 4) * std::max(2u, loadedAudio_.channels);
     inputBlockScratch_.assign(scratchSize, 0.0f);
     outputBlockScratch_.assign(scratchSize, 0.0f);
@@ -55,6 +126,7 @@ void DeckPlayer::setPlaybackPosition(double seconds) {
     if (stretchEngine_) {
         stretchEngine_->clear();
     }
+    resetEq();
 }
 
 double DeckPlayer::getPlaybackPosition() const {
@@ -119,11 +191,20 @@ void DeckPlayer::processBlock(float* outputBuffer, uint32_t numSamples, uint32_t
     }
 
     double currentPosSec = playbackPosition_.load();
-    uint64_t currentFrame = static_cast<uint64_t>(currentPosSec * loadedAudio_.sampleRate);
+    uint64_t currentFrame = static_cast<uint64_t>(std::round(currentPosSec * loadedAudio_.sampleRate));
     uint32_t srcChannels = loadedAudio_.channels;
     uint64_t totalFrames = loadedAudio_.totalFrames;
     float vol = volume_.load();
     double ratio = tempoRatio_.load();
+
+    float lowVal = lowEq_.load();
+    float midVal = midEq_.load();
+    float highVal = highEq_.load();
+
+    // Map EQ parameters [-1.0, 1.0]: [-1, 0] -> [0, 1], [0, 1] -> [1, 2]
+    float gainLow = std::clamp((lowVal < 0.0f) ? (1.0f + lowVal) : (1.0f + lowVal), 0.0f, 2.0f);
+    float gainMid = std::clamp((midVal < 0.0f) ? (1.0f + midVal) : (1.0f + midVal), 0.0f, 2.0f);
+    float gainHigh = std::clamp((highVal < 0.0f) ? (1.0f + highVal) : (1.0f + highVal), 0.0f, 2.0f);
 
     // 1. Fast Path: Unstretched 1.0x Playback
     if (std::abs(ratio - 1.0) < 1e-5 || !preservePitch_.load()) {
@@ -131,8 +212,18 @@ void DeckPlayer::processBlock(float* outputBuffer, uint32_t numSamples, uint32_t
             if (currentFrame < totalFrames) {
                 for (uint32_t c = 0; c < numChannels; ++c) {
                     uint32_t srcChan = (srcChannels == 1) ? 0 : (c % srcChannels);
-                    float sample = loadedAudio_.samples[currentFrame * srcChannels + srcChan];
-                    outputBuffer[s * numChannels + c] = sample * vol;
+                    float rawSample = loadedAudio_.samples[currentFrame * srcChannels + srcChan];
+
+                    // 3-Band LR4 Crossover Filtering
+                    auto& eq = eqChannels_[c % eqChannels_.size()];
+                    float lowRaw = eq.lpLow.process(rawSample, eqCoeffs_.coeffLpLow);
+                    float midHigh = eq.hpLow.process(rawSample, eqCoeffs_.coeffHpLow);
+                    float low = eq.apHigh.process(lowRaw, eqCoeffs_.coeffApHigh);
+                    float mid = eq.lpHigh.process(midHigh, eqCoeffs_.coeffLpHigh);
+                    float high = eq.hpHigh.process(midHigh, eqCoeffs_.coeffHpHigh);
+
+                    float filtered = low * gainLow + mid * gainMid + high * gainHigh;
+                    outputBuffer[s * numChannels + c] = filtered * vol;
                 }
                 currentFrame++;
             } else {
@@ -181,8 +272,18 @@ void DeckPlayer::processBlock(float* outputBuffer, uint32_t numSamples, uint32_t
         if (s < received) {
             for (uint32_t c = 0; c < numChannels; ++c) {
                 uint32_t srcChan = (srcChannels == 1) ? 0 : (c % srcChannels);
-                float sample = outputBlockScratch_[s * srcChannels + srcChan];
-                outputBuffer[s * numChannels + c] = sample * vol;
+                float rawSample = outputBlockScratch_[s * srcChannels + srcChan];
+
+                // 3-Band LR4 Crossover Filtering
+                auto& eq = eqChannels_[c % eqChannels_.size()];
+                float lowRaw = eq.lpLow.process(rawSample, eqCoeffs_.coeffLpLow);
+                float midHigh = eq.hpLow.process(rawSample, eqCoeffs_.coeffHpLow);
+                float low = eq.apHigh.process(lowRaw, eqCoeffs_.coeffApHigh);
+                float mid = eq.lpHigh.process(midHigh, eqCoeffs_.coeffLpHigh);
+                float high = eq.hpHigh.process(midHigh, eqCoeffs_.coeffHpHigh);
+
+                float filtered = low * gainLow + mid * gainMid + high * gainHigh;
+                outputBuffer[s * numChannels + c] = filtered * vol;
             }
         } else {
             for (uint32_t c = 0; c < numChannels; ++c) {

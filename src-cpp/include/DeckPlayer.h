@@ -42,6 +42,7 @@ public:
 
     void setEq(float low, float mid, float high);
     void setFilter(float filterVal);
+    void resetEq() noexcept;
 
     void setStemLevels(float vocal, float drum, float bass, float other);
 
@@ -57,7 +58,72 @@ public:
     DeckStateC getState() const noexcept;
     const DecodedAudio& getDecodedAudio() const noexcept { return loadedAudio_; }
 
+    struct BiquadCoeffs {
+        float b0{1.0f};
+        float b1{0.0f};
+        float b2{0.0f};
+        float a1{0.0f};
+        float a2{0.0f};
+    };
+
+    struct BiquadState {
+        float s1{0.0f};
+        float s2{0.0f};
+
+        void reset() noexcept {
+            s1 = 0.0f;
+            s2 = 0.0f;
+        }
+
+        inline float process(float in, const BiquadCoeffs& c) noexcept {
+            float out = c.b0 * in + s1;
+            s1 = c.b1 * in - c.a1 * out + s2;
+            s2 = c.b2 * in - c.a2 * out;
+            return out;
+        }
+    };
+
+    struct LR4Filter {
+        BiquadState stage1;
+        BiquadState stage2;
+
+        void reset() noexcept {
+            stage1.reset();
+            stage2.reset();
+        }
+
+        inline float process(float in, const BiquadCoeffs& c) noexcept {
+            return stage2.process(stage1.process(in, c), c);
+        }
+    };
+
+    struct ThreeBandChannelEq {
+        LR4Filter lpLow;
+        LR4Filter hpLow;
+        BiquadState apHigh;
+        LR4Filter lpHigh;
+        LR4Filter hpHigh;
+
+        void reset() noexcept {
+            lpLow.reset();
+            hpLow.reset();
+            apHigh.reset();
+            lpHigh.reset();
+            hpHigh.reset();
+        }
+    };
+
+    struct ThreeBandEqCoeffs {
+        BiquadCoeffs coeffLpLow;
+        BiquadCoeffs coeffHpLow;
+        BiquadCoeffs coeffApHigh;
+        BiquadCoeffs coeffLpHigh;
+        BiquadCoeffs coeffHpHigh;
+    };
+
 private:
+    void initCrossoverFilters(uint32_t sampleRate) noexcept;
+
     uint8_t deckId_;
     std::atomic<bool> isPlaying_{false};
     std::atomic<double> playbackPosition_{0.0};
@@ -77,6 +143,10 @@ private:
 
     DecodedAudio loadedAudio_{};
     std::unique_ptr<TimeStretchEngine> stretchEngine_;
+
+    // 3-Band DSP EQ State & Coefficients
+    ThreeBandEqCoeffs eqCoeffs_{};
+    std::vector<ThreeBandChannelEq> eqChannels_{2}; // Pre-allocated stereo channels
 
     // Pre-allocated Real-Time scratch buffers
     std::vector<float> inputBlockScratch_;
