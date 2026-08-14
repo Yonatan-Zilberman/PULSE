@@ -1,7 +1,7 @@
 # PULSE
 ## Autonomous Local DJ Application
 
-**Product Requirements Document — v4.0 (Final Merged Draft)**
+**Product Requirements Document**
 
 | | |
 |---|---|
