@@ -1,4 +1,4 @@
-# PULSE 🎛️
+# Pulse
 
 > **Autonomous, Local-First, Zero-Cloud DJ Application for macOS Apple Silicon (M1–M5)**
 
