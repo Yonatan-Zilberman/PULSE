@@ -93,6 +93,26 @@ public:
                                     double bpm = 120.0,
                                     float amplitude = 0.80f,
                                     uint32_t sampleRate = 48000);
+
+    /**
+     * @brief Generates a dedicated sub-bass heavy test fixture with powerful 60-80 Hz foundation and dynamic kick envelope.
+     */
+    static bool createBassHeavyFixture(const std::string& filePath,
+                                       double bassFreqHz = 60.0,
+                                       double harmonicFreqHz = 440.0,
+                                       double durationSec = 10.0,
+                                       double bpm = 120.0,
+                                       float amplitude = 0.85f,
+                                       uint32_t sampleRate = 48000);
+
+    /**
+     * @brief Generates a hot signal fixture testing gain headroom limits (0 dBFS near-peak multi-band tone).
+     */
+    static bool createHotSignalFixture(const std::string& filePath,
+                                       double durationSec = 10.0,
+                                       double bpm = 120.0,
+                                       float amplitude = 0.98f,
+                                       uint32_t sampleRate = 48000);
 };
 
 } // namespace pulse::audio

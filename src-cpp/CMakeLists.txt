@@ -176,3 +176,39 @@ if(APPLE)
     )
 endif()
 add_test(NAME CliPhraseTransitionEndToEndTest COMMAND test_cli_phrase_transition_e2e)
+
+add_executable(test_eq_dsp tests/test_eq_dsp.cpp)
+target_link_libraries(test_eq_dsp PRIVATE pulse_audio_engine)
+if(APPLE)
+    target_link_libraries(test_eq_dsp PRIVATE
+        "-framework CoreAudio"
+        "-framework AudioToolbox"
+        "-framework Accelerate"
+        "-framework CoreFoundation"
+    )
+endif()
+add_test(NAME EqDSPTest COMMAND test_eq_dsp)
+
+add_executable(test_bass_swap_safety tests/test_bass_swap_safety.cpp)
+target_link_libraries(test_bass_swap_safety PRIVATE pulse_audio_engine)
+if(APPLE)
+    target_link_libraries(test_bass_swap_safety PRIVATE
+        "-framework CoreAudio"
+        "-framework AudioToolbox"
+        "-framework Accelerate"
+        "-framework CoreFoundation"
+    )
+endif()
+add_test(NAME BassSwapSafetyTest COMMAND test_bass_swap_safety)
+
+add_executable(test_cli_bass_swap_e2e tests/test_cli_bass_swap_e2e.cpp)
+target_link_libraries(test_cli_bass_swap_e2e PRIVATE pulse_audio_engine)
+if(APPLE)
+    target_link_libraries(test_cli_bass_swap_e2e PRIVATE
+        "-framework CoreAudio"
+        "-framework AudioToolbox"
+        "-framework Accelerate"
+        "-framework CoreFoundation"
+    )
+endif()
+add_test(NAME CliBassSwapEndToEndTest COMMAND test_cli_bass_swap_e2e)

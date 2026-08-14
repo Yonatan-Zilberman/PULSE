@@ -307,4 +307,89 @@ bool WavWriter::createPhraseFixture(const std::string& filePath,
     return writeWav16(filePath, samples.data(), totalFrames, sampleRate, channels);
 }
 
+bool WavWriter::createBassHeavyFixture(const std::string& filePath,
+                                      double bassFreqHz,
+                                      double harmonicFreqHz,
+                                      double durationSec,
+                                      double bpm,
+                                      float amplitude,
+                                      uint32_t sampleRate) {
+    if (durationSec <= 0.0 || sampleRate == 0 || bpm <= 0.0) {
+        return false;
+    }
+
+    uint64_t totalFrames = static_cast<uint64_t>(durationSec * sampleRate);
+    uint32_t channels = 2;
+    std::vector<float> samples(totalFrames * channels, 0.0f);
+
+    double beatIntervalFrames = (60.0 / bpm) * sampleRate;
+    constexpr double twoPi = 6.28318530717958647692;
+
+    for (uint64_t f = 0; f < totalFrames; ++f) {
+        double timeSec = static_cast<double>(f) / sampleRate;
+
+        // Sub-bass tone (e.g. 60 Hz or 80 Hz)
+        double subBass = std::sin(twoPi * bassFreqHz * timeSec) * 0.50;
+
+        // Harmonic content (mid/high tone)
+        double harmonic = std::sin(twoPi * harmonicFreqHz * timeSec) * 0.15;
+
+        // Dynamic kick pitch envelope on downbeats / beats
+        double beatPhase = std::fmod(static_cast<double>(f), beatIntervalFrames);
+        double kickPitch = bassFreqHz * (1.0 + 2.5 * std::exp(-beatPhase / (sampleRate * 0.025)));
+        double kickEnv = std::exp(-beatPhase / (sampleRate * 0.12));
+        double kick = std::sin(twoPi * kickPitch * timeSec) * kickEnv * 0.25;
+
+        // Sharp beat transient click for beat detection
+        double clickDecay = std::exp(-beatPhase / (sampleRate * 0.01));
+        double click = std::sin(twoPi * 1500.0 * timeSec) * clickDecay * 0.10;
+
+        float value = static_cast<float>((subBass + kick + harmonic + click) * amplitude);
+        value = std::clamp(value, -1.0f, 1.0f);
+
+        samples[f * channels + 0] = value;
+        samples[f * channels + 1] = value;
+    }
+
+    return writeWav16(filePath, samples.data(), totalFrames, sampleRate, channels);
+}
+
+bool WavWriter::createHotSignalFixture(const std::string& filePath,
+                                       double durationSec,
+                                       double bpm,
+                                       float amplitude,
+                                       uint32_t sampleRate) {
+    if (durationSec <= 0.0 || sampleRate == 0 || bpm <= 0.0) {
+        return false;
+    }
+
+    uint64_t totalFrames = static_cast<uint64_t>(durationSec * sampleRate);
+    uint32_t channels = 2;
+    std::vector<float> samples(totalFrames * channels, 0.0f);
+
+    double beatIntervalFrames = (60.0 / bpm) * sampleRate;
+    constexpr double twoPi = 6.28318530717958647692;
+
+    for (uint64_t f = 0; f < totalFrames; ++f) {
+        double timeSec = static_cast<double>(f) / sampleRate;
+
+        // Multi-frequency hot signal (60 Hz sub + 440 Hz mid + 3500 Hz high)
+        double sub = std::sin(twoPi * 60.0 * timeSec) * 0.50;
+        double mid = std::sin(twoPi * 440.0 * timeSec) * 0.30;
+        double high = std::sin(twoPi * 3500.0 * timeSec) * 0.12;
+
+        double beatPhase = std::fmod(static_cast<double>(f), beatIntervalFrames);
+        double clickDecay = std::exp(-beatPhase / (sampleRate * 0.015));
+        double click = std::sin(twoPi * 1200.0 * timeSec) * clickDecay * 0.08;
+
+        float value = static_cast<float>((sub + mid + high + click) * amplitude);
+        value = std::clamp(value, -1.0f, 1.0f);
+
+        samples[f * channels + 0] = value;
+        samples[f * channels + 1] = value;
+    }
+
+    return writeWav16(filePath, samples.data(), totalFrames, sampleRate, channels);
+}
+
 } // namespace pulse::audio

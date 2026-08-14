@@ -88,6 +88,21 @@ int main(int argc, char* argv[]) {
     pulse::audio::WavWriter::createTempoTestFixture(fixtureExc150, 440.0, 10.0, 150.0, 0.80f, 48000);
     std::cout << "  Generated " << fixtureExc150 << std::endl;
 
+    // 15. Fixture Bass Heavy 120 BPM: 60 Hz sub + kick + 440 Hz harmonic, 10.0s, peak 0.85
+    std::string fixtureBass120 = (outputDir / "fixture_bass_heavy_120bpm.wav").string();
+    pulse::audio::WavWriter::createBassHeavyFixture(fixtureBass120, 60.0, 440.0, 10.0, 120.0, 0.85f, 48000);
+    std::cout << "  Generated " << fixtureBass120 << std::endl;
+
+    // 16. Fixture Bass Heavy 122 BPM: 60 Hz sub + kick + 440 Hz harmonic, 10.0s, peak 0.85
+    std::string fixtureBass122 = (outputDir / "fixture_bass_heavy_122bpm.wav").string();
+    pulse::audio::WavWriter::createBassHeavyFixture(fixtureBass122, 60.0, 440.0, 10.0, 122.0, 0.85f, 48000);
+    std::cout << "  Generated " << fixtureBass122 << std::endl;
+
+    // 17. Fixture Hot 0 dBFS: Multi-band hot signal, 10.0s, peak 0.98
+    std::string fixtureHot = (outputDir / "fixture_hot_0dbfs.wav").string();
+    pulse::audio::WavWriter::createHotSignalFixture(fixtureHot, 10.0, 120.0, 0.98f, 48000);
+    std::cout << "  Generated " << fixtureHot << std::endl;
+
     // Also populate golden-set
     std::filesystem::path goldenDir = "tests/golden-set";
     std::filesystem::create_directories(goldenDir);
@@ -97,6 +112,9 @@ int main(int argc, char* argv[]) {
     pulse::audio::WavWriter::createAmbiguousFixture((goldenDir / "golden_ambiguous_70_140bpm.wav").string(), 440.0, 10.0, 70.0, 0.80f, 48000);
     pulse::audio::WavWriter::createDriftingFixture((goldenDir / "golden_drifting_115_125bpm.wav").string(), 440.0, 10.0, 115.0, 125.0, 0.80f, 48000);
     pulse::audio::WavWriter::createSyncopatedFixture((goldenDir / "golden_syncopated_difficult.wav").string(), 440.0, 10.0, 2.0, 124.0, 0.80f, 48000);
+    pulse::audio::WavWriter::createBassHeavyFixture((goldenDir / "fixture_bass_heavy_120bpm.wav").string(), 60.0, 440.0, 10.0, 120.0, 0.85f, 48000);
+    pulse::audio::WavWriter::createBassHeavyFixture((goldenDir / "fixture_bass_heavy_122bpm.wav").string(), 60.0, 440.0, 10.0, 122.0, 0.85f, 48000);
+    pulse::audio::WavWriter::createHotSignalFixture((goldenDir / "fixture_hot_0dbfs.wav").string(), 10.0, 120.0, 0.98f, 48000);
 
     std::cout << "Audio fixtures generation complete!" << std::endl;
     return 0;
