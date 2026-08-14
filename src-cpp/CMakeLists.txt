@@ -21,6 +21,8 @@ set(AUDIO_ENGINE_SOURCES
     src/DeckPlayer.cpp
     src/Mixer.cpp
     src/AudioBridge.cpp
+    src/AudioDecoder.cpp
+    src/WavWriter.cpp
 )
 
 # Static Library Target
@@ -32,12 +34,81 @@ if(APPLE)
         "-framework CoreAudio"
         "-framework AudioToolbox"
         "-framework Accelerate"
+        "-framework CoreFoundation"
     )
 endif()
 
-# Test Target
+# Standalone CLI Prototype Executable
+add_executable(pulse_cli src/pulse_cli.cpp)
+target_link_libraries(pulse_cli PRIVATE pulse_audio_engine)
+if(APPLE)
+    target_link_libraries(pulse_cli PRIVATE
+        "-framework CoreAudio"
+        "-framework AudioToolbox"
+        "-framework Accelerate"
+        "-framework CoreFoundation"
+    )
+endif()
+
+# Fixture Generator Utility
+add_executable(generate_fixtures src/generate_fixtures.cpp)
+target_link_libraries(generate_fixtures PRIVATE pulse_audio_engine)
+if(APPLE)
+    target_link_libraries(generate_fixtures PRIVATE
+        "-framework CoreAudio"
+        "-framework AudioToolbox"
+        "-framework Accelerate"
+        "-framework CoreFoundation"
+    )
+endif()
+
+# Test Targets
 enable_testing()
+
 add_executable(test_audio_bridge tests/test_audio_bridge.cpp)
 target_link_libraries(test_audio_bridge PRIVATE pulse_audio_engine)
-
+if(APPLE)
+    target_link_libraries(test_audio_bridge PRIVATE
+        "-framework CoreAudio"
+        "-framework AudioToolbox"
+        "-framework Accelerate"
+        "-framework CoreFoundation"
+    )
+endif()
 add_test(NAME AudioBridgeSmokeTest COMMAND test_audio_bridge)
+
+add_executable(test_audio_decoder tests/test_audio_decoder.cpp)
+target_link_libraries(test_audio_decoder PRIVATE pulse_audio_engine)
+if(APPLE)
+    target_link_libraries(test_audio_decoder PRIVATE
+        "-framework CoreAudio"
+        "-framework AudioToolbox"
+        "-framework Accelerate"
+        "-framework CoreFoundation"
+    )
+endif()
+add_test(NAME AudioDecoderTest COMMAND test_audio_decoder)
+
+add_executable(test_mixer_dsp tests/test_mixer_dsp.cpp)
+target_link_libraries(test_mixer_dsp PRIVATE pulse_audio_engine)
+if(APPLE)
+    target_link_libraries(test_mixer_dsp PRIVATE
+        "-framework CoreAudio"
+        "-framework AudioToolbox"
+        "-framework Accelerate"
+        "-framework CoreFoundation"
+    )
+endif()
+add_test(NAME MixerDSPTest COMMAND test_mixer_dsp)
+
+add_executable(test_cli_e2e tests/test_cli_e2e.cpp)
+target_link_libraries(test_cli_e2e PRIVATE pulse_audio_engine)
+if(APPLE)
+    target_link_libraries(test_cli_e2e PRIVATE
+        "-framework CoreAudio"
+        "-framework AudioToolbox"
+        "-framework Accelerate"
+        "-framework CoreFoundation"
+    )
+endif()
+add_test(NAME CliEndToEndTest COMMAND test_cli_e2e)
