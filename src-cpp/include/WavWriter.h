@@ -41,6 +41,38 @@ public:
                                        double bpm = 120.0,
                                        float amplitude = 0.80f,
                                        uint32_t sampleRate = 48000);
+
+    /**
+     * @brief Generates an ambiguous tempo fixture with 70 BPM strong pulses and 140 BPM alternating subdivisions.
+     */
+    static bool createAmbiguousFixture(const std::string& filePath,
+                                       double frequencyHz,
+                                       double durationSec,
+                                       double bpmBase = 70.0,
+                                       float amplitude = 0.80f,
+                                       uint32_t sampleRate = 48000);
+
+    /**
+     * @brief Generates a drifting/non-constant tempo fixture with accelerating tempo from bpmStart to bpmEnd.
+     */
+    static bool createDriftingFixture(const std::string& filePath,
+                                      double frequencyHz,
+                                      double durationSec,
+                                      double bpmStart = 115.0,
+                                      double bpmEnd = 125.0,
+                                      float amplitude = 0.80f,
+                                      uint32_t sampleRate = 48000);
+
+    /**
+     * @brief Generates a syncopated fixture with silence intro followed by swing/polyrhythm clicks.
+     */
+    static bool createSyncopatedFixture(const std::string& filePath,
+                                        double frequencyHz,
+                                        double durationSec,
+                                        double silenceIntroSec = 2.0,
+                                        double bpm = 124.0,
+                                        float amplitude = 0.80f,
+                                        uint32_t sampleRate = 48000);
 };
 
 } // namespace pulse::audio
