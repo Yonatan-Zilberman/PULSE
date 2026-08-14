@@ -12,100 +12,44 @@ int main(int argc, char* argv[]) {
 
     std::cout << "Generating deterministic PULSE audio fixtures in " << outputDir << "..." << std::endl;
 
-    // 1. Fixture A: 440Hz tone, 120 BPM rhythmic pulses, 10.0s, 48kHz, peak 0.80
-    std::string fixtureA = (outputDir / "fixture_a.wav").string();
-    pulse::audio::WavWriter::createSyntheticFixture(fixtureA, 440.0, 10.0, 120.0, 0.80f, 48000);
-    std::cout << "  Generated " << fixtureA << std::endl;
+    // 1. Generate base unit test fixtures in tests/audio
+    std::filesystem::path audioDir = "tests/audio";
+    std::filesystem::create_directories(audioDir);
 
-    // 2. Fixture B: 880Hz tone, 120 BPM rhythmic pulses, 10.0s, 48kHz, peak 0.75
-    std::string fixtureB = (outputDir / "fixture_b.wav").string();
-    pulse::audio::WavWriter::createSyntheticFixture(fixtureB, 880.0, 10.0, 120.0, 0.75f, 48000);
-    std::cout << "  Generated " << fixtureB << std::endl;
+    pulse::audio::WavWriter::createSyntheticFixture((audioDir / "fixture_a.wav").string(), 440.0, 10.0, 120.0, 0.80f, 48000);
+    pulse::audio::WavWriter::createSyntheticFixture((audioDir / "fixture_b.wav").string(), 880.0, 10.0, 120.0, 0.75f, 48000);
+    pulse::audio::WavWriter::createSyntheticFixture((audioDir / "fixture_steady_128bpm.wav").string(), 523.25, 10.0, 128.0, 0.80f, 48000);
+    pulse::audio::WavWriter::createAmbiguousFixture((audioDir / "fixture_ambiguous_70_140bpm.wav").string(), 440.0, 10.0, 70.0, 0.80f, 48000);
+    pulse::audio::WavWriter::createDriftingFixture((audioDir / "fixture_drifting_115_125bpm.wav").string(), 440.0, 10.0, 115.0, 125.0, 0.80f, 48000);
+    pulse::audio::WavWriter::createSyncopatedFixture((audioDir / "fixture_syncopated_difficult.wav").string(), 440.0, 10.0, 2.0, 124.0, 0.80f, 48000);
+    pulse::audio::WavWriter::createSyntheticFixture((audioDir / "sine_440hz_120bpm_48k.wav").string(), 440.0, 10.0, 120.0, 0.80f, 48000);
+    pulse::audio::WavWriter::createSyntheticFixture((audioDir / "sine_880hz_120bpm_48k.wav").string(), 880.0, 10.0, 120.0, 0.75f, 48000);
+    pulse::audio::WavWriter::createTempoTestFixture((audioDir / "fixture_tempo_small_122bpm.wav").string(), 440.0, 10.0, 122.0, 0.80f, 48000);
+    pulse::audio::WavWriter::createTempoTestFixture((audioDir / "fixture_tempo_moderate_126bpm.wav").string(), 440.0, 10.0, 126.0, 0.80f, 48000);
+    pulse::audio::WavWriter::createTempoTestFixture((audioDir / "fixture_tempo_octave_140bpm.wav").string(), 440.0, 10.0, 140.0, 0.80f, 48000);
+    pulse::audio::WavWriter::createTempoTestFixture((audioDir / "fixture_tempo_excessive_150bpm.wav").string(), 440.0, 10.0, 150.0, 0.80f, 48000);
+    pulse::audio::WavWriter::createBassHeavyFixture((audioDir / "fixture_bass_heavy_120bpm.wav").string(), 60.0, 440.0, 10.0, 120.0, 0.85f, 48000);
+    pulse::audio::WavWriter::createBassHeavyFixture((audioDir / "fixture_bass_heavy_122bpm.wav").string(), 60.0, 440.0, 10.0, 122.0, 0.85f, 48000);
+    pulse::audio::WavWriter::createHotSignalFixture((audioDir / "fixture_hot_0dbfs.wav").string(), 10.0, 120.0, 0.98f, 48000);
 
-    // 3. Fixture Steady 128 BPM: 523.25Hz tone, 128 BPM rhythmic pulses, 10.0s, 48kHz, peak 0.80
-    std::string fixture128 = (outputDir / "fixture_steady_128bpm.wav").string();
-    pulse::audio::WavWriter::createSyntheticFixture(fixture128, 523.25, 10.0, 128.0, 0.80f, 48000);
-    std::cout << "  Generated " << fixture128 << std::endl;
-
-    // 4. Fixture Ambiguous 70/140 BPM: 440Hz tone, 70 BPM base clicks + 140 BPM syncopations, 10.0s
-    std::string fixtureAmbiguous = (outputDir / "fixture_ambiguous_70_140bpm.wav").string();
-    pulse::audio::WavWriter::createAmbiguousFixture(fixtureAmbiguous, 440.0, 10.0, 70.0, 0.80f, 48000);
-    std::cout << "  Generated " << fixtureAmbiguous << std::endl;
-
-    // 5. Fixture Drifting 115-125 BPM: 440Hz tone, smooth linear acceleration 115 -> 125 BPM, 10.0s
-    std::string fixtureDrifting = (outputDir / "fixture_drifting_115_125bpm.wav").string();
-    pulse::audio::WavWriter::createDriftingFixture(fixtureDrifting, 440.0, 10.0, 115.0, 125.0, 0.80f, 48000);
-    std::cout << "  Generated " << fixtureDrifting << std::endl;
-
-    // 6. Fixture Syncopated Difficult: 440Hz tone, 2.0s silent intro + swing rhythm, 10.0s
-    std::string fixtureSyncopated = (outputDir / "fixture_syncopated_difficult.wav").string();
-    pulse::audio::WavWriter::createSyncopatedFixture(fixtureSyncopated, 440.0, 10.0, 2.0, 124.0, 0.80f, 48000);
-    std::cout << "  Generated " << fixtureSyncopated << std::endl;
-
-    // 7. Sine 440Hz 120 BPM 48k
-    std::string sine440 = (outputDir / "sine_440hz_120bpm_48k.wav").string();
-    pulse::audio::WavWriter::createSyntheticFixture(sine440, 440.0, 10.0, 120.0, 0.80f, 48000);
-    std::cout << "  Generated " << sine440 << std::endl;
-
-    // 8. Sine 880Hz 120 BPM 48k
-    std::string sine880 = (outputDir / "sine_880hz_120bpm_48k.wav").string();
-    pulse::audio::WavWriter::createSyntheticFixture(sine880, 880.0, 10.0, 120.0, 0.75f, 48000);
-    std::cout << "  Generated " << sine880 << std::endl;
-
-    // 9. 0-byte invalid empty file
-    std::string emptyFile = (outputDir / "invalid_empty.wav").string();
+    // Negative unit test fixtures (empty / corrupt) specifically in tests/audio
     {
-        std::ofstream ofs(emptyFile, std::ios::binary);
+        std::ofstream ofs((audioDir / "invalid_empty.wav").string(), std::ios::binary);
     }
-    std::cout << "  Generated " << emptyFile << std::endl;
-
-    // 10. Corrupt header file
-    std::string corruptFile = (outputDir / "corrupt_header.wav").string();
     {
-        std::ofstream ofs(corruptFile, std::ios::binary);
+        std::ofstream ofs((audioDir / "corrupt_header.wav").string(), std::ios::binary);
         const char garbage[32] = "RIFF\0\0\0\0CORRUPT_HEADER_BYTES";
         ofs.write(garbage, sizeof(garbage));
     }
-    std::cout << "  Generated " << corruptFile << std::endl;
 
-    // 11. Fixture Tempo Small: 122 BPM (+1.67%), 440 Hz, 10.0s
-    std::string fixtureSmall122 = (outputDir / "fixture_tempo_small_122bpm.wav").string();
-    pulse::audio::WavWriter::createTempoTestFixture(fixtureSmall122, 440.0, 10.0, 122.0, 0.80f, 48000);
-    std::cout << "  Generated " << fixtureSmall122 << std::endl;
-
-    // 12. Fixture Tempo Moderate: 126 BPM (+5.0%), 440 Hz, 10.0s
-    std::string fixtureMod126 = (outputDir / "fixture_tempo_moderate_126bpm.wav").string();
-    pulse::audio::WavWriter::createTempoTestFixture(fixtureMod126, 440.0, 10.0, 126.0, 0.80f, 48000);
-    std::cout << "  Generated " << fixtureMod126 << std::endl;
-
-    // 13. Fixture Tempo Octave: 140 BPM (2x octave from 70), 440 Hz, 10.0s
-    std::string fixtureOctave140 = (outputDir / "fixture_tempo_octave_140bpm.wav").string();
-    pulse::audio::WavWriter::createTempoTestFixture(fixtureOctave140, 440.0, 10.0, 140.0, 0.80f, 48000);
-    std::cout << "  Generated " << fixtureOctave140 << std::endl;
-
-    // 14. Fixture Tempo Excessive: 150 BPM (+25.0%), 440 Hz, 10.0s
-    std::string fixtureExc150 = (outputDir / "fixture_tempo_excessive_150bpm.wav").string();
-    pulse::audio::WavWriter::createTempoTestFixture(fixtureExc150, 440.0, 10.0, 150.0, 0.80f, 48000);
-    std::cout << "  Generated " << fixtureExc150 << std::endl;
-
-    // 15. Fixture Bass Heavy 120 BPM: 60 Hz sub + kick + 440 Hz harmonic, 10.0s, peak 0.85
-    std::string fixtureBass120 = (outputDir / "fixture_bass_heavy_120bpm.wav").string();
-    pulse::audio::WavWriter::createBassHeavyFixture(fixtureBass120, 60.0, 440.0, 10.0, 120.0, 0.85f, 48000);
-    std::cout << "  Generated " << fixtureBass120 << std::endl;
-
-    // 16. Fixture Bass Heavy 122 BPM: 60 Hz sub + kick + 440 Hz harmonic, 10.0s, peak 0.85
-    std::string fixtureBass122 = (outputDir / "fixture_bass_heavy_122bpm.wav").string();
-    pulse::audio::WavWriter::createBassHeavyFixture(fixtureBass122, 60.0, 440.0, 10.0, 122.0, 0.85f, 48000);
-    std::cout << "  Generated " << fixtureBass122 << std::endl;
-
-    // 17. Fixture Hot 0 dBFS: Multi-band hot signal, 10.0s, peak 0.98
-    std::string fixtureHot = (outputDir / "fixture_hot_0dbfs.wav").string();
-    pulse::audio::WavWriter::createHotSignalFixture(fixtureHot, 10.0, 120.0, 0.98f, 48000);
-    std::cout << "  Generated " << fixtureHot << std::endl;
-
-    // Also populate golden-set
-    std::filesystem::path goldenDir = "tests/golden-set";
+    // 2. Generate 25-Track Golden Corpus in tests/golden-set (or custom outputDir if requested)
+    std::filesystem::path goldenDir = outputDir;
+    if (goldenDir == "tests/audio") {
+        goldenDir = "tests/golden-set";
+    }
     std::filesystem::create_directories(goldenDir);
+
+    // Legacy golden set fixtures for backwards-compatibility
     pulse::audio::WavWriter::createSyntheticFixture((goldenDir / "golden_track_440hz_120bpm.wav").string(), 440.0, 10.0, 120.0, 0.80f, 48000);
     pulse::audio::WavWriter::createSyntheticFixture((goldenDir / "golden_track_880hz_120bpm.wav").string(), 880.0, 10.0, 120.0, 0.75f, 48000);
     pulse::audio::WavWriter::createSyntheticFixture((goldenDir / "golden_steady_128bpm.wav").string(), 523.25, 10.0, 128.0, 0.80f, 48000);
@@ -116,6 +60,42 @@ int main(int argc, char* argv[]) {
     pulse::audio::WavWriter::createBassHeavyFixture((goldenDir / "fixture_bass_heavy_122bpm.wav").string(), 60.0, 440.0, 10.0, 122.0, 0.85f, 48000);
     pulse::audio::WavWriter::createHotSignalFixture((goldenDir / "fixture_hot_0dbfs.wav").string(), 10.0, 120.0, 0.98f, 48000);
 
-    std::cout << "Audio fixtures generation complete!" << std::endl;
+    // 25-Track Golden Corpus: golden_track_01.wav through golden_track_25.wav
+    const double bpms[25] = {
+        120.0, 121.0, 121.5, 122.0, 122.5, 123.0, 123.5, 124.0,
+        124.5, 125.0, 125.5, 126.0, 126.5, 127.0, 127.5, 128.0,
+        128.5, 129.0, 129.5, 130.0, 128.0, 126.0, 124.0, 122.0, 120.0
+    };
+
+    const double baseFreqs[25] = {
+        440.00, 466.16, 493.88, 523.25, 554.37, 587.33, 622.25, 659.25,
+        698.46, 739.99, 783.99, 830.61, 880.00, 440.00, 493.88, 523.25,
+        587.33, 659.25, 698.46, 783.99, 880.00, 523.25, 440.00, 493.88, 523.25
+    };
+
+    const double durations[25] = {
+        32.0, 32.0, 32.0, 32.0, 32.0, 32.0, 32.0, 32.0,
+        32.0, 32.0, 32.0, 32.0, 32.0, 32.0, 32.0, 32.0,
+        32.0, 32.0, 32.0, 32.0, 32.0, 32.0, 32.0, 32.0, 32.0
+    };
+
+    for (int t = 0; t < 25; ++t) {
+        char trackName[64];
+        std::snprintf(trackName, sizeof(trackName), "golden_track_%02d.wav", t + 1);
+        std::string trackPath = (goldenDir / trackName).string();
+        pulse::audio::WavWriter::createBassHeavyFixture(
+            trackPath,
+            60.0,                // 60 Hz sub-bass
+            baseFreqs[t],        // Harmonic key frequency
+            durations[t],        // 32.0s duration
+            bpms[t],             // Tempo
+            0.82f,               // Headroom-safe amplitude
+            48000
+        );
+        std::cout << "  Generated Golden Set Track [" << (t + 1) << "/25]: " << trackName
+                  << " (" << bpms[t] << " BPM, " << baseFreqs[t] << " Hz, " << durations[t] << "s)\n";
+    }
+
+    std::cout << "Audio fixtures and 25-track golden corpus generation complete!" << std::endl;
     return 0;
 }
