@@ -38,9 +38,27 @@ typedef struct {
     uint32_t transition_type;
 } TransitionCommandC;
 
+// Master Audio Engine Operational Telemetry
+typedef struct {
+    uint32_t sample_rate;
+    uint32_t buffer_size;
+    uint32_t channel_count;
+    uint8_t is_initialized;
+    uint8_t is_running;
+    uint8_t pad[2];
+    uint64_t total_frames_processed;
+    uint32_t underrun_count;
+    float cpu_load;
+} AudioEngineStatsC;
+
 // Exported C FFI Functions
 int pulse_audio_init(AudioEngineConfigC config);
+int pulse_audio_start(void);
+int pulse_audio_stop(void);
 int pulse_audio_shutdown(void);
+int pulse_audio_is_running(void);
+int pulse_audio_is_initialized(void);
+int pulse_audio_get_stats(AudioEngineStatsC* out_stats);
 int pulse_audio_load_track(uint8_t deck_id, const char* file_path);
 int pulse_audio_play_pause(uint8_t deck_id, uint8_t play);
 int pulse_audio_get_deck_state(uint8_t deck_id, DeckStateC* out_state);
@@ -53,5 +71,6 @@ int pulse_audio_execute_transition(TransitionCommandC command);
 static_assert(std::is_standard_layout<AudioEngineConfigC>::value, "AudioEngineConfigC must be standard layout");
 static_assert(std::is_standard_layout<DeckStateC>::value, "DeckStateC must be standard layout");
 static_assert(std::is_standard_layout<TransitionCommandC>::value, "TransitionCommandC must be standard layout");
+static_assert(std::is_standard_layout<AudioEngineStatsC>::value, "AudioEngineStatsC must be standard layout");
 
 #endif

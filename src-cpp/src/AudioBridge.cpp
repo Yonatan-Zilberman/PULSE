@@ -8,8 +8,30 @@ int pulse_audio_init(AudioEngineConfigC config) {
     return pulse::audio::AudioEngine::getInstance().initialize(config);
 }
 
+int pulse_audio_start(void) {
+    return pulse::audio::AudioEngine::getInstance().start();
+}
+
+int pulse_audio_stop(void) {
+    return pulse::audio::AudioEngine::getInstance().stop();
+}
+
 int pulse_audio_shutdown(void) {
     return pulse::audio::AudioEngine::getInstance().shutdown();
+}
+
+int pulse_audio_is_running(void) {
+    return pulse::audio::AudioEngine::getInstance().isRunning() ? 1 : 0;
+}
+
+int pulse_audio_is_initialized(void) {
+    return pulse::audio::AudioEngine::getInstance().isInitialized() ? 1 : 0;
+}
+
+int pulse_audio_get_stats(AudioEngineStatsC* out_stats) {
+    if (!out_stats) return -1;
+    *out_stats = pulse::audio::AudioEngine::getInstance().getStats();
+    return 0;
 }
 
 int pulse_audio_load_track(uint8_t deck_id, const char* file_path) {
@@ -34,3 +56,4 @@ int pulse_audio_execute_transition(TransitionCommandC command) {
 }
 
 }
+

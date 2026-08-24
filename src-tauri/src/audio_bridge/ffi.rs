@@ -1,9 +1,14 @@
-use super::types::{AudioEngineConfigC, DeckStateC, TransitionCommandC};
+use super::types::{AudioEngineConfigC, AudioEngineStatsC, DeckStateC, TransitionCommandC};
 use std::os::raw::{c_char, c_int};
 
 extern "C" {
     pub fn pulse_audio_init(config: AudioEngineConfigC) -> c_int;
+    pub fn pulse_audio_start() -> c_int;
+    pub fn pulse_audio_stop() -> c_int;
     pub fn pulse_audio_shutdown() -> c_int;
+    pub fn pulse_audio_is_running() -> c_int;
+    pub fn pulse_audio_is_initialized() -> c_int;
+    pub fn pulse_audio_get_stats(out_stats: *mut AudioEngineStatsC) -> c_int;
     pub fn pulse_audio_load_track(deck_id: u8, file_path: *const c_char) -> c_int;
     pub fn pulse_audio_play_pause(deck_id: u8, play: u8) -> c_int;
     pub fn pulse_audio_get_deck_state(deck_id: u8, out_state: *mut DeckStateC) -> c_int;

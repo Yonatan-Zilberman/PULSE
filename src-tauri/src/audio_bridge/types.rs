@@ -34,6 +34,20 @@ pub struct TransitionCommandC {
     pub transition_type: u32,
 }
 
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+pub struct AudioEngineStatsC {
+    pub sample_rate: u32,
+    pub buffer_size: u32,
+    pub channel_count: u32,
+    pub is_initialized: u8,
+    pub is_running: u8,
+    pub pad: [u8; 2],
+    pub total_frames_processed: u64,
+    pub underrun_count: u32,
+    pub cpu_load: f32,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -44,5 +58,6 @@ mod tests {
         assert_eq!(size_of::<AudioEngineConfigC>(), 12);
         // DeckStateC has f64 and multiple f32s; ensure predictable memory layout
         assert!(size_of::<DeckStateC>() >= 48);
+        assert_eq!(size_of::<AudioEngineStatsC>(), 32);
     }
 }
