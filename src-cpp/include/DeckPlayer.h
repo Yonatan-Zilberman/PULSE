@@ -31,14 +31,14 @@ public:
 
     bool loadFile(const std::string& filePath);
     void setPlaying(bool playing);
-    bool isPlaying() const;
+    bool isPlaying() const noexcept;
 
     void setPlaybackPosition(double seconds);
-    double getPlaybackPosition() const;
-    double getDuration() const;
+    double getPlaybackPosition() const noexcept;
+    double getDuration() const noexcept;
 
     void setVolume(float vol);
-    float getVolume() const;
+    float getVolume() const noexcept;
 
     void setEq(float low, float mid, float high);
     void setFilter(float filterVal);
@@ -48,9 +48,12 @@ public:
 
     // Tempo and Pitch-Preservation Controls
     void setTempoRatio(double ratio);
-    double getTempoRatio() const;
+    double getTempoRatio() const noexcept;
     void setPitchPreservation(bool enabled);
-    bool isPitchPreserved() const;
+    bool isPitchPreserved() const noexcept;
+
+    uint8_t getDeckId() const noexcept { return deckId_; }
+    void initCrossoverFilters(uint32_t sampleRate) noexcept;
 
     // Audio callback processing block (Real-Time thread)
     void processBlock(float* outputBuffer, uint32_t numSamples, uint32_t numChannels) noexcept;
@@ -122,8 +125,6 @@ public:
     };
 
 private:
-    void initCrossoverFilters(uint32_t sampleRate) noexcept;
-
     uint8_t deckId_;
     std::atomic<bool> isPlaying_{false};
     std::atomic<double> playbackPosition_{0.0};

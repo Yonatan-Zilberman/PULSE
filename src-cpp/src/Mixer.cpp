@@ -6,7 +6,7 @@ namespace pulse::audio {
 
 Mixer::Mixer() = default;
 
-void Mixer::setCrossfader(float position) {
+void Mixer::setCrossfader(float position) noexcept {
     crossfaderPosition_.store(std::clamp(position, -1.0f, 1.0f));
 }
 
@@ -14,9 +14,10 @@ float Mixer::getCrossfader() const noexcept {
     return crossfaderPosition_.load();
 }
 
-void Mixer::setMasterVolume(float vol) {
+void Mixer::setMasterVolume(float vol) noexcept {
     masterVolume_.store(std::clamp(vol, 0.0f, 1.0f));
 }
+
 
 float Mixer::getMasterVolume() const noexcept {
     return masterVolume_.load();

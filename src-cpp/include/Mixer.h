@@ -16,10 +16,10 @@ public:
     Mixer();
     ~Mixer() = default;
 
-    void setCrossfader(float position); // -1.0 (Deck A) to 1.0 (Deck B)
+    void setCrossfader(float position) noexcept; // -1.0 (Deck A) to 1.0 (Deck B)
     float getCrossfader() const noexcept;
 
-    void setMasterVolume(float vol);
+    void setMasterVolume(float vol) noexcept;
     float getMasterVolume() const noexcept;
 
     // Mix stereo buffers from Deck A and Deck B into master output

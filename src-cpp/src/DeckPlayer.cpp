@@ -8,9 +8,9 @@ namespace pulse::audio {
 DeckPlayer::DeckPlayer(uint8_t deckId)
     : deckId_(deckId),
       stretchEngine_(std::make_unique<TimeStretchEngine>()),
-      eqChannels_(2),
-      inputBlockScratch_(4096 * 2, 0.0f),
-      outputBlockScratch_(4096 * 2, 0.0f) {
+      eqChannels_(8),
+      inputBlockScratch_(32768, 0.0f),
+      outputBlockScratch_(32768, 0.0f) {
     initCrossoverFilters(48000);
 }
 
@@ -106,9 +106,13 @@ bool DeckPlayer::loadFile(const std::string& filePath) {
 
     initCrossoverFilters(loadedAudio_.sampleRate);
 
-    size_t scratchSize = std::max(4096u, loadedAudio_.sampleRate / 4) * std::max(2u, loadedAudio_.channels);
-    inputBlockScratch_.assign(scratchSize, 0.0f);
-    outputBlockScratch_.assign(scratchSize, 0.0f);
+    size_t scratchSize = std::max(32768u, static_cast<uint32_t>(loadedAudio_.sampleRate / 4) * std::max(2u, loadedAudio_.channels));
+    if (inputBlockScratch_.size() < scratchSize) {
+        inputBlockScratch_.assign(scratchSize, 0.0f);
+    }
+    if (outputBlockScratch_.size() < scratchSize) {
+        outputBlockScratch_.assign(scratchSize, 0.0f);
+    }
 
     return true;
 }
@@ -117,7 +121,7 @@ void DeckPlayer::setPlaying(bool playing) {
     isPlaying_.store(playing);
 }
 
-bool DeckPlayer::isPlaying() const {
+bool DeckPlayer::isPlaying() const noexcept {
     return isPlaying_.load();
 }
 
@@ -129,11 +133,11 @@ void DeckPlayer::setPlaybackPosition(double seconds) {
     resetEq();
 }
 
-double DeckPlayer::getPlaybackPosition() const {
+double DeckPlayer::getPlaybackPosition() const noexcept {
     return playbackPosition_.load();
 }
 
-double DeckPlayer::getDuration() const {
+double DeckPlayer::getDuration() const noexcept {
     return loadedAudio_.durationSeconds;
 }
 
@@ -141,7 +145,7 @@ void DeckPlayer::setVolume(float vol) {
     volume_.store(std::clamp(vol, 0.0f, 1.0f));
 }
 
-float DeckPlayer::getVolume() const {
+float DeckPlayer::getVolume() const noexcept {
     return volume_.load();
 }
 
@@ -170,7 +174,7 @@ void DeckPlayer::setTempoRatio(double ratio) {
     }
 }
 
-double DeckPlayer::getTempoRatio() const {
+double DeckPlayer::getTempoRatio() const noexcept {
     return tempoRatio_.load();
 }
 
@@ -178,9 +182,10 @@ void DeckPlayer::setPitchPreservation(bool enabled) {
     preservePitch_.store(enabled);
 }
 
-bool DeckPlayer::isPitchPreserved() const {
+bool DeckPlayer::isPitchPreserved() const noexcept {
     return preservePitch_.load();
 }
+
 
 void DeckPlayer::processBlock(float* outputBuffer, uint32_t numSamples, uint32_t numChannels) noexcept {
     if (!outputBuffer) return;
