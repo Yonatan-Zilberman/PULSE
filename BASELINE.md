@@ -41,20 +41,19 @@
   - `src-tauri/src/library/`: SQLite table DDL (`CREATE_TRACKS_TABLE`, indexes) and in-memory `LibraryCache` initialization tests.
   - `src-tauri/src/audio_bridge/`: `types.rs` and `ffi.rs` with C-compatible POD types matching C++ structs.
 
-### Tier 3: Real-Time Audio Engine & Phase 0 Multi-Track Set Mixer (C++20 / Apple Frameworks)
+### Tier 3: Real-Time Audio Engine & Phase 1 Production CoreAudio Engine (C++20 / JUCE 8 / Apple Frameworks)
 - **Build System:** `src-cpp/CMakeLists.txt` targeting C++20 with `-Wall -Wextra -Wpedantic -Werror` and native Apple frameworks (`CoreAudio`, `AudioToolbox`, `Accelerate`, `CoreFoundation`).
-- **Headers & Safety:** `AudioEngine.h`, `DeckPlayer.h`, `Mixer.h`, `TransitionPlanner.h`, `TransitionExecutor.h`, `AudioDecoder.h`, `WavWriter.h`, `TimeStretchEngine.h`, `TempoStrategy.h`, and `AudioBridgeTypes.h` documenting real-time thread safety (zero heap allocations, zero blocking locks in audio callbacks).
+- **CoreAudio Hardware Lifecycle:** `AudioEngine.cpp` implementing deterministic lifecycle (`initialize` $\rightarrow$ `start` $\rightarrow$ `process` $\rightarrow$ `stop` $\rightarrow$ `shutdown`), CoreAudio AudioUnit (`kAudioUnitType_Output`, `kAudioUnitSubType_DefaultOutput`) stream acquisition, sample rate negotiation (44.1k/48k/96k), buffer sizing (64–2048 samples), real-time IOProc callback dispatching to `juce::AudioIODeviceCallback::audioDeviceIOCallbackWithContext`, and clean teardown.
+- **Strict Real-Time Safety:** Verified 0 dynamic heap allocations, 0 blocking mutexes, 0 logging statements, and 0 disk I/O across the real-time audio thread callback path (`processAudioBlock`, `audioDeviceIOCallbackWithContext`).
+- **Headers & Safety:** `AudioEngine.h`, `DeckPlayer.h`, `Mixer.h`, `TransitionPlanner.h`, `TransitionExecutor.h`, `AudioDecoder.h`, `WavWriter.h`, `TimeStretchEngine.h`, `TempoStrategy.h`, and `AudioBridgeTypes.h` documenting real-time thread safety.
 - **Multi-Track Ping-Pong Audio Loop:** `pulse_cli.cpp` executing continuous multi-track sets across 20+ tracks via dual-deck ping-pong cycling (Deck A $\leftrightarrow$ Deck B), pre-loading incoming tracks into idle decks during playback, automated smoothstep bass swapping, and exporting isolated transition audio snippets (`tests/audio/transitions/transition_XX.wav`).
 - **3-Band LR4 EQ DSP Engine:** `DeckPlayer.cpp` implementing 4th-order Linkwitz-Riley crossover filters ($24\text{ dB/octave}$) splitting audio at $f_L = 250\text{ Hz}$ (Low/Mid) and $f_H = 3500\text{ Hz}$ (Mid/High) with 2nd-order allpass phase compensation, achieving flat frequency response ($0\text{ dB}$ across spectrum) and zero phase cancellation at unity EQ bypass.
 - **Deterministic Bass Swap Automation:** `TransitionExecutor.cpp` implementing `BassSwapStrategy` executing a sequenced low-frequency handoff where outgoing deck low-EQ drops smoothly $0.0 \rightarrow -1.0$ while incoming deck low-EQ rises $-1.0 \rightarrow 0.0$ via smoothstep interpolation centered at a configurable swap point ($p = 0.50$).
 - **Objective Gain Safety:** Energy conservation guarantees that low-frequency sum remains strictly bounded ($\le +0.5\text{ dB}$ vs $> +2.5\text{ dB}$ swelling in naive crossfades), eliminating low-end buildup, phase mud, and limiter clipping.
-- **Musical Phrase Boundary Analysis:** `AudioDecoder.cpp` extracting deterministic 4-bar, 8-bar, 16-bar, and 32-bar boundary timestamps and calculating `phraseConfidence` from beatgrid regularity and track bar count.
-- **Transition Window Planner:** `TransitionPlanner.cpp` evaluating 4/8/16/32-bar transition windows, calculating outro exit boundaries for outgoing decks and intro entry downbeats for incoming decks, exact phrase duration scaling, and fallback handling.
 - **Pitch-Preserving Time-Stretching:** `TimeStretchEngine.cpp` implementing real-time safe, pitch-invariant WSOLA time-stretching (0.0 semitone pitch shift) with SoundTouch dynamic linkage isolation.
-- **Bounded Tempo Strategy:** `TempoStrategy.cpp` implementing 4-tier decision policies: Small ($\le \pm 3\%$), Moderate ($\pm 3\%$ to $\pm 6\%$), Octave-Compatible ($0.5\times/2.0\times$), and Excessive ($> \pm 6\%$ rejected/penalized).
 - **Golden Fixture Corpus (25 Tracks):** `generate_fixtures.cpp` generating 25 distinct golden tracks (`golden_track_01.wav` .. `golden_track_25.wav`) in `tests/golden-set/` spanning 118–130 BPM, diverse Camelot keys, 8-bar musical phrase pulses, and $60\text{ Hz}$ sub-bass foundations.
-- **Test Suite (14 CTest Targets):**
-  - `test_audio_bridge` (`AudioBridgeSmokeTest`): C ABI size, alignment, and state mutation tests.
+- **Test Suite (17 CTest Targets):**
+  - `test_audio_bridge` (`AudioBridgeSmokeTest`): C ABI size, alignment, lifecycle, and telemetry tests.
   - `test_audio_decoder` (`AudioDecoderTest`): Steady 120/128 BPM, ambiguous 70/140 BPM, drifting tempo, syncopated rhythm with silence intro, and corrupt/empty file error tests.
   - `test_mixer_dsp` (`MixerDSPTest`): Equal-power crossfader, volume scaling, and peak limiter tests.
   - `test_cli_e2e` (`CliEndToEndTest`): End-to-end beat-aligned transition rendering and JSON artifact emission verification.
@@ -68,6 +67,9 @@
   - `test_cli_bass_swap_e2e` (`CliBassSwapEndToEndTest`): E2E CLI integration test rendering bass-heavy fixtures with bass swap transition, validating output WAV and JSON report schema (`"strategy": "bass_swap"`).
   - `test_set_mixer_e2e` (`SetMixerEndToEndTest`): End-to-end 20-transition multi-track set rendering test across 21 golden tracks, verifying non-clipping peak amplitude $< 1.0$, 20 transition objects in JSON report with bass swap strategy, and existence of all 20 snippet WAVs.
   - `test_cli_set_flags_e2e` (`CliSetFlagsEndToEndTest`): E2E verification of CLI arguments (`--playlist`, `--track-dir`, `--tracks`, `--auto-sequence`, `--export-snippets`), multi-track mix rendering, and error handling.
+  - `test_audio_engine_lifecycle` (`AudioEngineLifecycleTest`): Comprehensive state machine transitions, invalid config rejection, re-initialization under load, and active playback teardown.
+  - `test_realtime_safety` (`RealtimeSafetyTest`): Zero heap allocations assertions across 1,000 blocks of simulated and live DSP callbacks.
+  - `test_coreaudio_live` (`CoreAudioLiveTest`): Live hardware callback verification streaming audio to default macOS CoreAudio output with frame progress and zero underruns.
 
 ---
 
@@ -90,8 +92,10 @@
 | **Rust Formatting** | `cargo fmt --manifest-path src-tauri/Cargo.toml -- --check` | Rustfmt style adherence |
 | **Rust Linting** | `cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings` | Zero clippy warnings |
 | **Rust Core Unit Tests** | `cargo test --manifest-path src-tauri/Cargo.toml` | 23 unit tests (SetPlanner sequencing over 25 tracks, Camelot harmonic distance, Serde roundtrips, Candidate scoring, SQLite DDL) |
-| **C++ Build & CTest Suite** | `cmake -B src-cpp/build -S src-cpp && cmake --build src-cpp/build && ctest --test-dir src-cpp/build --output-on-failure` | 14 CTest suites (including SetMixerEndToEndTest and CliSetFlagsEndToEndTest) |
+| **C++ Build & CTest Suite** | `cmake -B src-cpp/build -S src-cpp && cmake --build src-cpp/build && ctest --test-dir src-cpp/build --output-on-failure` | 17 CTest suites (including AudioEngineLifecycleTest, RealtimeSafetyTest, CoreAudioLiveTest) |
+| **Live CoreAudio Probe** | `./src-cpp/build/test_coreaudio_live` | Validates real-time audio output callback execution on macOS hardware |
 | **Phase 0 Golden Set Mix (20 Transitions)** | `./src-cpp/build/pulse_cli --track-dir tests/golden-set --min-transitions 20 --transition-strategy bass_swap --phrase-aware --phrase-bars 8 --tempo-strategy source --export-snippets --out tests/audio/phase0_master_set.wav --report tests/audio/phase0_set_report.json` | 20-transition automated continuous set mix, master WAV, 20 snippet WAVs, and JSON report |
+
 
 
 ---

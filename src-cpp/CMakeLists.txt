@@ -237,3 +237,40 @@ if(APPLE)
 endif()
 add_test(NAME CliSetFlagsEndToEndTest COMMAND test_cli_set_flags_e2e)
 
+add_executable(test_audio_engine_lifecycle tests/test_audio_engine_lifecycle.cpp)
+target_link_libraries(test_audio_engine_lifecycle PRIVATE pulse_audio_engine)
+if(APPLE)
+    target_link_libraries(test_audio_engine_lifecycle PRIVATE
+        "-framework CoreAudio"
+        "-framework AudioToolbox"
+        "-framework Accelerate"
+        "-framework CoreFoundation"
+    )
+endif()
+add_test(NAME AudioEngineLifecycleTest COMMAND test_audio_engine_lifecycle)
+
+add_executable(test_realtime_safety tests/test_realtime_safety.cpp)
+target_link_libraries(test_realtime_safety PRIVATE pulse_audio_engine)
+if(APPLE)
+    target_link_libraries(test_realtime_safety PRIVATE
+        "-framework CoreAudio"
+        "-framework AudioToolbox"
+        "-framework Accelerate"
+        "-framework CoreFoundation"
+    )
+endif()
+add_test(NAME RealtimeSafetyTest COMMAND test_realtime_safety)
+
+add_executable(test_coreaudio_live tests/test_coreaudio_live.cpp)
+target_link_libraries(test_coreaudio_live PRIVATE pulse_audio_engine)
+if(APPLE)
+    target_link_libraries(test_coreaudio_live PRIVATE
+        "-framework CoreAudio"
+        "-framework AudioToolbox"
+        "-framework Accelerate"
+        "-framework CoreFoundation"
+    )
+endif()
+add_test(NAME CoreAudioLiveTest COMMAND test_coreaudio_live)
+
+

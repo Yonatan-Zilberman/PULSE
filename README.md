@@ -69,11 +69,15 @@ cargo test --manifest-path src-tauri/Cargo.toml
 
 #### C++ Audio Engine Build & Test Suite:
 ```bash
-# Configure, build, and run CTest test suite:
+# Configure, build, and run full CTest test suite (17 test suites):
 cmake -B src-cpp/build -S src-cpp
 cmake --build src-cpp/build
 ctest --test-dir src-cpp/build --output-on-failure
+
+# Run live macOS CoreAudio hardware playback probe:
+./src-cpp/build/test_coreaudio_live
 ```
+
 
 #### Phase 0 CLI Audio-Engine Prototype & Multi-Track Set Mixer:
 ```bash
