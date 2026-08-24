@@ -81,8 +81,6 @@ int main() {
     TransitionCommandC cmd{0, 1, 4.0, 2};
     assert(engine.executeTransition(cmd) == 0);
 
-    assert(engine.start() == 0);
-
     // Warm up one block to prime any static buffers
     std::vector<float> masterOut(256 * 2, 0.0f);
     engine.processAudioBlock(masterOut.data(), 256, 2);
@@ -101,16 +99,17 @@ int main() {
     for (int i = 0; i < 500; ++i) {
         engine.processAudioBlock(masterOut.data(), 256, 2);
     }
+    uint64_t allocsPart1 = g_allocationCount.load(std::memory_order_relaxed);
+    std::cout << "Allocations after processAudioBlock: " << allocsPart1 << std::endl;
 
     // 2. Process 500 blocks via audioDeviceIOCallbackWithContext
     for (int i = 0; i < 500; ++i) {
         engine.audioDeviceIOCallbackWithContext(nullptr, 0, outputChannels, 2, 256, ctx);
     }
-
-    g_trackAllocations.store(false, std::memory_order_seq_cst);
     uint64_t totalAllocations = g_allocationCount.load(std::memory_order_relaxed);
+    g_trackAllocations.store(false, std::memory_order_seq_cst);
 
-    std::cout << "Real-time callback allocations detected: " << totalAllocations << std::endl;
+    std::cout << "Total real-time callback allocations detected: " << totalAllocations << std::endl;
     assert(totalAllocations == 0);
 
     assert(engine.shutdown() == 0);

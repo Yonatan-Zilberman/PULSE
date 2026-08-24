@@ -273,4 +273,17 @@ if(APPLE)
 endif()
 add_test(NAME CoreAudioLiveTest COMMAND test_coreaudio_live)
 
+add_executable(test_dual_deck_playback tests/test_dual_deck_playback.cpp)
+target_link_libraries(test_dual_deck_playback PRIVATE pulse_audio_engine)
+if(APPLE)
+    target_link_libraries(test_dual_deck_playback PRIVATE
+        "-framework CoreAudio"
+        "-framework AudioToolbox"
+        "-framework Accelerate"
+        "-framework CoreFoundation"
+    )
+endif()
+add_test(NAME DualDeckPlaybackTest COMMAND test_dual_deck_playback)
+
+
 
