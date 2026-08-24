@@ -18,7 +18,12 @@ typedef struct {
 typedef struct {
     uint8_t deck_id; // 0 = Deck A, 1 = Deck B
     uint8_t is_playing;
+    uint8_t playback_state; // 0 = Empty, 1 = Loading, 2 = Ready, 3 = Playing, 4 = Paused, 5 = Error
+    uint8_t preserve_pitch;
     double playback_position_seconds;
+    double duration_seconds;
+    double bpm;
+    double tempo_ratio;
     float volume;
     float low_eq;
     float mid_eq;
@@ -60,8 +65,22 @@ int pulse_audio_is_running(void);
 int pulse_audio_is_initialized(void);
 int pulse_audio_get_stats(AudioEngineStatsC* out_stats);
 int pulse_audio_load_track(uint8_t deck_id, const char* file_path);
+int pulse_audio_prepare_deck(uint8_t deck_id, const char* file_path, double cue_seconds, double tempo_ratio, uint8_t preserve_pitch);
+int pulse_audio_play(uint8_t deck_id);
+int pulse_audio_pause(uint8_t deck_id);
+int pulse_audio_stop_deck(uint8_t deck_id);
+int pulse_audio_seek(uint8_t deck_id, double position_seconds);
 int pulse_audio_play_pause(uint8_t deck_id, uint8_t play);
+int pulse_audio_set_volume(uint8_t deck_id, float volume);
+int pulse_audio_set_eq(uint8_t deck_id, float low, float mid, float high);
+int pulse_audio_set_filter(uint8_t deck_id, float filter_val);
+int pulse_audio_set_tempo_ratio(uint8_t deck_id, double ratio);
+int pulse_audio_set_pitch_preservation(uint8_t deck_id, uint8_t enabled);
+int pulse_audio_set_stem_levels(uint8_t deck_id, float vocal, float drum, float bass, float other);
 int pulse_audio_get_deck_state(uint8_t deck_id, DeckStateC* out_state);
+int pulse_audio_is_deck_playing(uint8_t deck_id);
+double pulse_audio_get_deck_position(uint8_t deck_id);
+double pulse_audio_get_deck_duration(uint8_t deck_id);
 int pulse_audio_execute_transition(TransitionCommandC command);
 
 #ifdef __cplusplus

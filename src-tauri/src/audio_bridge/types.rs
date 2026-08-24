@@ -13,7 +13,12 @@ pub struct AudioEngineConfigC {
 pub struct DeckStateC {
     pub deck_id: u8, // 0 = Deck A, 1 = Deck B
     pub is_playing: u8,
+    pub playback_state: u8, // 0 = Empty, 1 = Loading, 2 = Ready, 3 = Playing, 4 = Paused, 5 = Error
+    pub preserve_pitch: u8,
     pub playback_position_seconds: f64,
+    pub duration_seconds: f64,
+    pub bpm: f64,
+    pub tempo_ratio: f64,
     pub volume: f32,
     pub low_eq: f32,
     pub mid_eq: f32,
