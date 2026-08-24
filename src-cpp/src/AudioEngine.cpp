@@ -292,12 +292,131 @@ bool AudioEngine::loadTrack(uint8_t deckId, const std::string& filePath) {
     return false;
 }
 
+bool AudioEngine::prepareDeck(uint8_t deckId, const std::string& filePath, double cueSeconds, double tempoRatio, bool preservePitch) {
+    if (deckId == 0 && deckA_) {
+        return deckA_->prepareTrack(filePath, cueSeconds, tempoRatio, preservePitch);
+    } else if (deckId == 1 && deckB_) {
+        return deckB_->prepareTrack(filePath, cueSeconds, tempoRatio, preservePitch);
+    }
+    return false;
+}
+
+bool AudioEngine::playDeck(uint8_t deckId) {
+    if (deckId == 0 && deckA_) {
+        deckA_->play();
+        return true;
+    } else if (deckId == 1 && deckB_) {
+        deckB_->play();
+        return true;
+    }
+    return false;
+}
+
+bool AudioEngine::pauseDeck(uint8_t deckId) {
+    if (deckId == 0 && deckA_) {
+        deckA_->pause();
+        return true;
+    } else if (deckId == 1 && deckB_) {
+        deckB_->pause();
+        return true;
+    }
+    return false;
+}
+
+bool AudioEngine::stopDeck(uint8_t deckId) {
+    if (deckId == 0 && deckA_) {
+        deckA_->stop();
+        return true;
+    } else if (deckId == 1 && deckB_) {
+        deckB_->stop();
+        return true;
+    }
+    return false;
+}
+
+bool AudioEngine::seekDeck(uint8_t deckId, double seconds) {
+    if (deckId == 0 && deckA_) {
+        deckA_->seek(seconds);
+        return true;
+    } else if (deckId == 1 && deckB_) {
+        deckB_->seek(seconds);
+        return true;
+    }
+    return false;
+}
+
 bool AudioEngine::setPlaying(uint8_t deckId, bool isPlaying) {
     if (deckId == 0 && deckA_) {
         deckA_->setPlaying(isPlaying);
         return true;
     } else if (deckId == 1 && deckB_) {
         deckB_->setPlaying(isPlaying);
+        return true;
+    }
+    return false;
+}
+
+bool AudioEngine::setDeckVolume(uint8_t deckId, float volume) {
+    if (deckId == 0 && deckA_) {
+        deckA_->setVolume(volume);
+        return true;
+    } else if (deckId == 1 && deckB_) {
+        deckB_->setVolume(volume);
+        return true;
+    }
+    return false;
+}
+
+bool AudioEngine::setDeckEq(uint8_t deckId, float low, float mid, float high) {
+    if (deckId == 0 && deckA_) {
+        deckA_->setEq(low, mid, high);
+        return true;
+    } else if (deckId == 1 && deckB_) {
+        deckB_->setEq(low, mid, high);
+        return true;
+    }
+    return false;
+}
+
+bool AudioEngine::setDeckFilter(uint8_t deckId, float filterVal) {
+    if (deckId == 0 && deckA_) {
+        deckA_->setFilter(filterVal);
+        return true;
+    } else if (deckId == 1 && deckB_) {
+        deckB_->setFilter(filterVal);
+        return true;
+    }
+    return false;
+}
+
+bool AudioEngine::setDeckTempoRatio(uint8_t deckId, double ratio) {
+    if (deckId == 0 && deckA_) {
+        deckA_->setTempoRatio(ratio);
+        return true;
+    } else if (deckId == 1 && deckB_) {
+        deckB_->setTempoRatio(ratio);
+        return true;
+    }
+    return false;
+}
+
+bool AudioEngine::setDeckPitchPreservation(uint8_t deckId, bool enabled) {
+    if (deckId == 0 && deckA_) {
+        deckA_->setPitchPreservation(enabled);
+        return true;
+    } else if (deckId == 1 && deckB_) {
+        deckB_->setPitchPreservation(enabled);
+        return true;
+    }
+    return false;
+}
+
+bool AudioEngine::setDeckStemLevels(uint8_t deckId, float vocal, float drum, float bass, float other) {
+    if (deckId == 0 && deckA_) {
+        deckA_->setStemLevels(vocal, drum, bass, other);
+        return true;
+    } else if (deckId == 1 && deckB_) {
+        deckB_->setStemLevels(vocal, drum, bass, other);
         return true;
     }
     return false;
@@ -312,6 +431,33 @@ DeckStateC AudioEngine::getDeckState(uint8_t deckId) const noexcept {
     DeckStateC emptyState{};
     emptyState.deck_id = deckId;
     return emptyState;
+}
+
+bool AudioEngine::isDeckPlaying(uint8_t deckId) const noexcept {
+    if (deckId == 0 && deckA_) {
+        return deckA_->isPlaying();
+    } else if (deckId == 1 && deckB_) {
+        return deckB_->isPlaying();
+    }
+    return false;
+}
+
+double AudioEngine::getDeckPosition(uint8_t deckId) const noexcept {
+    if (deckId == 0 && deckA_) {
+        return deckA_->getPlaybackPosition();
+    } else if (deckId == 1 && deckB_) {
+        return deckB_->getPlaybackPosition();
+    }
+    return 0.0;
+}
+
+double AudioEngine::getDeckDuration(uint8_t deckId) const noexcept {
+    if (deckId == 0 && deckA_) {
+        return deckA_->getDuration();
+    } else if (deckId == 1 && deckB_) {
+        return deckB_->getDuration();
+    }
+    return 0.0;
 }
 
 int AudioEngine::executeTransition(const TransitionCommandC& command) {

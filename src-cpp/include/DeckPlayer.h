@@ -10,6 +10,15 @@
 
 namespace pulse::audio {
 
+enum class DeckPlaybackState : uint8_t {
+    Empty = 0,
+    Loading = 1,
+    Ready = 2,
+    Playing = 3,
+    Paused = 4,
+    Error = 5
+};
+
 /**
  * @brief Real-time Deck Audio Player with Pitch-Preserving Time-Stretching.
  *
@@ -29,13 +38,23 @@ public:
     DeckPlayer(DeckPlayer&&) = delete;
     DeckPlayer& operator=(DeckPlayer&&) = delete;
 
+    // Track Loading & Staged Preparation
     bool loadFile(const std::string& filePath);
+    bool prepareTrack(const std::string& filePath, double cuePositionSec = 0.0, double tempoRatio = 1.0, bool preservePitch = true);
+
+    // Playback State Controls
+    void play();
+    void pause();
+    void stop();
+    void seek(double seconds);
     void setPlaying(bool playing);
     bool isPlaying() const noexcept;
+    DeckPlaybackState getPlaybackState() const noexcept { return playbackState_.load(std::memory_order_relaxed); }
 
     void setPlaybackPosition(double seconds);
     double getPlaybackPosition() const noexcept;
     double getDuration() const noexcept;
+    double getBpm() const noexcept;
 
     void setVolume(float vol);
     float getVolume() const noexcept;
@@ -59,7 +78,12 @@ public:
     void processBlock(float* outputBuffer, uint32_t numSamples, uint32_t numChannels) noexcept;
 
     DeckStateC getState() const noexcept;
-    const DecodedAudio& getDecodedAudio() const noexcept { return loadedAudio_; }
+    const DecodedAudio* getLoadedAudio() const noexcept { return activeAudio_.load(std::memory_order_relaxed); }
+    const DecodedAudio& getDecodedAudio() const noexcept {
+        const DecodedAudio* audio = activeAudio_.load(std::memory_order_relaxed);
+        static const DecodedAudio kEmptyAudio{};
+        return audio ? *audio : kEmptyAudio;
+    }
 
     struct BiquadCoeffs {
         float b0{1.0f};
@@ -126,8 +150,10 @@ public:
 
 private:
     uint8_t deckId_;
+    std::atomic<DeckPlaybackState> playbackState_{DeckPlaybackState::Empty};
     std::atomic<bool> isPlaying_{false};
     std::atomic<double> playbackPosition_{0.0};
+    std::atomic<double> cuePosition_{0.0};
     std::atomic<float> volume_{1.0f};
     std::atomic<float> lowEq_{0.0f};
     std::atomic<float> midEq_{0.0f};
@@ -142,7 +168,11 @@ private:
     std::atomic<double> tempoRatio_{1.0};
     std::atomic<bool> preservePitch_{true};
 
-    DecodedAudio loadedAudio_{};
+    // Lock-Free Staged Audio Buffer Management (Zero RT deallocation)
+    std::atomic<const DecodedAudio*> activeAudio_{nullptr};
+    std::unique_ptr<DecodedAudio> currentAudio_;
+    std::unique_ptr<DecodedAudio> previousAudio_;
+
     std::unique_ptr<TimeStretchEngine> stretchEngine_;
 
     // 3-Band DSP EQ State & Coefficients

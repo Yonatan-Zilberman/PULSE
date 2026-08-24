@@ -74,10 +74,24 @@ public:
     TransitionExecutor* getTransitionExecutor() noexcept { return transitionExecutor_.get(); }
     const TransitionExecutor* getTransitionExecutor() const noexcept { return transitionExecutor_.get(); }
 
-    // C ABI Support
+    // C ABI Support & Dual-Deck Playback Controls
     bool loadTrack(uint8_t deckId, const std::string& filePath);
+    bool prepareDeck(uint8_t deckId, const std::string& filePath, double cueSeconds = 0.0, double tempoRatio = 1.0, bool preservePitch = true);
+    bool playDeck(uint8_t deckId);
+    bool pauseDeck(uint8_t deckId);
+    bool stopDeck(uint8_t deckId);
+    bool seekDeck(uint8_t deckId, double seconds);
     bool setPlaying(uint8_t deckId, bool isPlaying);
+    bool setDeckVolume(uint8_t deckId, float volume);
+    bool setDeckEq(uint8_t deckId, float low, float mid, float high);
+    bool setDeckFilter(uint8_t deckId, float filterVal);
+    bool setDeckTempoRatio(uint8_t deckId, double ratio);
+    bool setDeckPitchPreservation(uint8_t deckId, bool enabled);
+    bool setDeckStemLevels(uint8_t deckId, float vocal, float drum, float bass, float other);
     DeckStateC getDeckState(uint8_t deckId) const noexcept;
+    bool isDeckPlaying(uint8_t deckId) const noexcept;
+    double getDeckPosition(uint8_t deckId) const noexcept;
+    double getDeckDuration(uint8_t deckId) const noexcept;
     int executeTransition(const TransitionCommandC& command);
 
     // AudioIODeviceCallback Implementation (Real-Time thread)

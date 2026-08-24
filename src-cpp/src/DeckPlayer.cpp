@@ -14,7 +14,10 @@ DeckPlayer::DeckPlayer(uint8_t deckId)
     initCrossoverFilters(48000);
 }
 
-DeckPlayer::~DeckPlayer() = default;
+DeckPlayer::~DeckPlayer() {
+    isPlaying_.store(false, std::memory_order_release);
+    activeAudio_.store(nullptr, std::memory_order_release);
+}
 
 void DeckPlayer::initCrossoverFilters(uint32_t sampleRate) noexcept {
     if (sampleRate == 0) sampleRate = 48000;
@@ -83,30 +86,44 @@ void DeckPlayer::resetEq() noexcept {
 }
 
 bool DeckPlayer::loadFile(const std::string& filePath) {
+    return prepareTrack(filePath, 0.0, tempoRatio_.load(std::memory_order_relaxed), preservePitch_.load(std::memory_order_relaxed));
+}
+
+bool DeckPlayer::prepareTrack(const std::string& filePath, double cuePositionSec, double tempoRatio, bool preservePitch) {
+    playbackState_.store(DeckPlaybackState::Loading, std::memory_order_release);
+
     DecodedAudio decoded;
     if (!AudioDecoder::decodeFile(filePath, decoded)) {
+        playbackState_.store(DeckPlaybackState::Error, std::memory_order_release);
         return false;
     }
 
-    loadedAudio_ = std::move(decoded);
-    playbackPosition_.store(0.0);
-    isPlaying_.store(false);
+    auto newAudio = std::make_unique<DecodedAudio>(std::move(decoded));
+
+    double clampedCue = std::clamp(cuePositionSec, 0.0, newAudio->durationSeconds);
+    cuePosition_.store(clampedCue, std::memory_order_release);
+    playbackPosition_.store(clampedCue, std::memory_order_release);
+    isPlaying_.store(false, std::memory_order_release);
+
+    double clampedRatio = std::clamp(tempoRatio, 0.25, 4.0);
+    tempoRatio_.store(clampedRatio, std::memory_order_release);
+    preservePitch_.store(preservePitch, std::memory_order_release);
 
     // Initialize TimeStretchEngine
     TimeStretchConfig stretchCfg;
-    stretchCfg.sampleRate = loadedAudio_.sampleRate;
-    stretchCfg.channels = loadedAudio_.channels;
-    stretchCfg.tempoRatio = tempoRatio_.load();
-    stretchCfg.preservePitch = preservePitch_.load();
+    stretchCfg.sampleRate = newAudio->sampleRate;
+    stretchCfg.channels = newAudio->channels;
+    stretchCfg.tempoRatio = clampedRatio;
+    stretchCfg.preservePitch = preservePitch;
     stretchCfg.pitchSemiTones = 0.0f;
     stretchCfg.quickSeek = false;
 
     stretchEngine_->initialize(stretchCfg);
     stretchEngine_->clear();
 
-    initCrossoverFilters(loadedAudio_.sampleRate);
+    initCrossoverFilters(newAudio->sampleRate);
 
-    size_t scratchSize = std::max(32768u, static_cast<uint32_t>(loadedAudio_.sampleRate / 4) * std::max(2u, loadedAudio_.channels));
+    size_t scratchSize = std::max(32768u, static_cast<uint32_t>(newAudio->sampleRate / 4) * std::max(2u, newAudio->channels));
     if (inputBlockScratch_.size() < scratchSize) {
         inputBlockScratch_.assign(scratchSize, 0.0f);
     }
@@ -114,97 +131,161 @@ bool DeckPlayer::loadFile(const std::string& filePath) {
         outputBlockScratch_.assign(scratchSize, 0.0f);
     }
 
+    // Atomically publish new audio buffer for real-time thread consumption
+    activeAudio_.store(newAudio.get(), std::memory_order_release);
+    playbackState_.store(DeckPlaybackState::Ready, std::memory_order_release);
+
+    // Keep old audio alive until next load/dtor to prevent RT use-after-free
+    previousAudio_ = std::move(currentAudio_);
+    currentAudio_ = std::move(newAudio);
+
     return true;
 }
 
-void DeckPlayer::setPlaying(bool playing) {
-    isPlaying_.store(playing);
+void DeckPlayer::play() {
+    const DecodedAudio* audio = activeAudio_.load(std::memory_order_acquire);
+    if (!audio || audio->samples.empty()) {
+        return;
+    }
+
+    if (playbackPosition_.load(std::memory_order_relaxed) >= audio->durationSeconds) {
+        playbackPosition_.store(cuePosition_.load(std::memory_order_relaxed), std::memory_order_release);
+    }
+
+    isPlaying_.store(true, std::memory_order_release);
+    playbackState_.store(DeckPlaybackState::Playing, std::memory_order_release);
 }
 
-bool DeckPlayer::isPlaying() const noexcept {
-    return isPlaying_.load();
+void DeckPlayer::pause() {
+    isPlaying_.store(false, std::memory_order_release);
+    if (activeAudio_.load(std::memory_order_acquire)) {
+        playbackState_.store(DeckPlaybackState::Paused, std::memory_order_release);
+    }
 }
 
-void DeckPlayer::setPlaybackPosition(double seconds) {
-    playbackPosition_.store(std::max(0.0, seconds));
+void DeckPlayer::stop() {
+    isPlaying_.store(false, std::memory_order_release);
+    playbackPosition_.store(cuePosition_.load(std::memory_order_relaxed), std::memory_order_release);
     if (stretchEngine_) {
         stretchEngine_->clear();
     }
     resetEq();
+    if (activeAudio_.load(std::memory_order_acquire)) {
+        playbackState_.store(DeckPlaybackState::Ready, std::memory_order_release);
+    }
+}
+
+void DeckPlayer::seek(double seconds) {
+    const DecodedAudio* audio = activeAudio_.load(std::memory_order_acquire);
+    double maxDuration = audio ? audio->durationSeconds : 0.0;
+    double clamped = std::clamp(seconds, 0.0, maxDuration);
+
+    playbackPosition_.store(clamped, std::memory_order_release);
+    if (stretchEngine_) {
+        stretchEngine_->clear();
+    }
+    resetEq();
+
+    if (!isPlaying_.load(std::memory_order_relaxed) && audio) {
+        cuePosition_.store(clamped, std::memory_order_release);
+    }
+}
+
+void DeckPlayer::setPlaying(bool playing) {
+    if (playing) {
+        play();
+    } else {
+        pause();
+    }
+}
+
+bool DeckPlayer::isPlaying() const noexcept {
+    return isPlaying_.load(std::memory_order_relaxed);
+}
+
+void DeckPlayer::setPlaybackPosition(double seconds) {
+    seek(seconds);
 }
 
 double DeckPlayer::getPlaybackPosition() const noexcept {
-    return playbackPosition_.load();
+    return playbackPosition_.load(std::memory_order_relaxed);
 }
 
 double DeckPlayer::getDuration() const noexcept {
-    return loadedAudio_.durationSeconds;
+    const DecodedAudio* audio = activeAudio_.load(std::memory_order_relaxed);
+    return audio ? audio->durationSeconds : 0.0;
+}
+
+double DeckPlayer::getBpm() const noexcept {
+    const DecodedAudio* audio = activeAudio_.load(std::memory_order_relaxed);
+    return audio ? audio->detectedBpm : 0.0;
 }
 
 void DeckPlayer::setVolume(float vol) {
-    volume_.store(std::clamp(vol, 0.0f, 1.0f));
+    volume_.store(std::clamp(vol, 0.0f, 1.0f), std::memory_order_relaxed);
 }
 
 float DeckPlayer::getVolume() const noexcept {
-    return volume_.load();
+    return volume_.load(std::memory_order_relaxed);
 }
 
 void DeckPlayer::setEq(float low, float mid, float high) {
-    lowEq_.store(std::clamp(low, -1.0f, 1.0f));
-    midEq_.store(std::clamp(mid, -1.0f, 1.0f));
-    highEq_.store(std::clamp(high, -1.0f, 1.0f));
+    lowEq_.store(std::clamp(low, -1.0f, 1.0f), std::memory_order_relaxed);
+    midEq_.store(std::clamp(mid, -1.0f, 1.0f), std::memory_order_relaxed);
+    highEq_.store(std::clamp(high, -1.0f, 1.0f), std::memory_order_relaxed);
 }
 
 void DeckPlayer::setFilter(float filterVal) {
-    filter_.store(std::clamp(filterVal, -1.0f, 1.0f));
+    filter_.store(std::clamp(filterVal, -1.0f, 1.0f), std::memory_order_relaxed);
 }
 
 void DeckPlayer::setStemLevels(float vocal, float drum, float bass, float other) {
-    vocalStem_.store(std::clamp(vocal, 0.0f, 1.0f));
-    drumStem_.store(std::clamp(drum, 0.0f, 1.0f));
-    bassStem_.store(std::clamp(bass, 0.0f, 1.0f));
-    otherStem_.store(std::clamp(other, 0.0f, 1.0f));
+    vocalStem_.store(std::clamp(vocal, 0.0f, 1.0f), std::memory_order_relaxed);
+    drumStem_.store(std::clamp(drum, 0.0f, 1.0f), std::memory_order_relaxed);
+    bassStem_.store(std::clamp(bass, 0.0f, 1.0f), std::memory_order_relaxed);
+    otherStem_.store(std::clamp(other, 0.0f, 1.0f), std::memory_order_relaxed);
 }
 
 void DeckPlayer::setTempoRatio(double ratio) {
     double clamped = std::clamp(ratio, 0.25, 4.0);
-    tempoRatio_.store(clamped);
+    tempoRatio_.store(clamped, std::memory_order_relaxed);
     if (stretchEngine_) {
         stretchEngine_->setTempoRatio(clamped);
     }
 }
 
 double DeckPlayer::getTempoRatio() const noexcept {
-    return tempoRatio_.load();
+    return tempoRatio_.load(std::memory_order_relaxed);
 }
 
 void DeckPlayer::setPitchPreservation(bool enabled) {
-    preservePitch_.store(enabled);
+    preservePitch_.store(enabled, std::memory_order_relaxed);
 }
 
 bool DeckPlayer::isPitchPreserved() const noexcept {
-    return preservePitch_.load();
+    return preservePitch_.load(std::memory_order_relaxed);
 }
-
 
 void DeckPlayer::processBlock(float* outputBuffer, uint32_t numSamples, uint32_t numChannels) noexcept {
     if (!outputBuffer) return;
 
-    if (!isPlaying_.load() || loadedAudio_.samples.empty() || loadedAudio_.sampleRate == 0) {
+    const DecodedAudio* audio = activeAudio_.load(std::memory_order_acquire);
+
+    if (!isPlaying_.load(std::memory_order_relaxed) || !audio || audio->samples.empty() || audio->sampleRate == 0) {
         std::memset(outputBuffer, 0, numSamples * numChannels * sizeof(float));
         return;
     }
 
-    double currentPosSec = playbackPosition_.load();
-    uint64_t currentFrame = static_cast<uint64_t>(std::round(currentPosSec * loadedAudio_.sampleRate));
-    uint32_t srcChannels = loadedAudio_.channels;
-    uint64_t totalFrames = loadedAudio_.totalFrames;
-    float vol = volume_.load();
-    double ratio = tempoRatio_.load();
+    double currentPosSec = playbackPosition_.load(std::memory_order_relaxed);
+    uint64_t currentFrame = static_cast<uint64_t>(std::round(currentPosSec * audio->sampleRate));
+    uint32_t srcChannels = audio->channels;
+    uint64_t totalFrames = audio->totalFrames;
+    float vol = volume_.load(std::memory_order_relaxed);
+    double ratio = tempoRatio_.load(std::memory_order_relaxed);
 
-    float lowVal = lowEq_.load();
-    float midVal = midEq_.load();
-    float highVal = highEq_.load();
+    float lowVal = lowEq_.load(std::memory_order_relaxed);
+    float midVal = midEq_.load(std::memory_order_relaxed);
+    float highVal = highEq_.load(std::memory_order_relaxed);
 
     // Map EQ parameters [-1.0, 1.0]: [-1, 0] -> [0, 1], [0, 1] -> [1, 2]
     float gainLow = std::clamp((lowVal < 0.0f) ? (1.0f + lowVal) : (1.0f + lowVal), 0.0f, 2.0f);
@@ -212,12 +293,12 @@ void DeckPlayer::processBlock(float* outputBuffer, uint32_t numSamples, uint32_t
     float gainHigh = std::clamp((highVal < 0.0f) ? (1.0f + highVal) : (1.0f + highVal), 0.0f, 2.0f);
 
     // 1. Fast Path: Unstretched 1.0x Playback
-    if (std::abs(ratio - 1.0) < 1e-5 || !preservePitch_.load()) {
+    if (std::abs(ratio - 1.0) < 1e-5 || !preservePitch_.load(std::memory_order_relaxed)) {
         for (uint32_t s = 0; s < numSamples; ++s) {
             if (currentFrame < totalFrames) {
                 for (uint32_t c = 0; c < numChannels; ++c) {
                     uint32_t srcChan = (srcChannels == 1) ? 0 : (c % srcChannels);
-                    float rawSample = loadedAudio_.samples[currentFrame * srcChannels + srcChan];
+                    float rawSample = audio->samples[currentFrame * srcChannels + srcChan];
 
                     // 3-Band LR4 Crossover Filtering
                     auto& eq = eqChannels_[c % eqChannels_.size()];
@@ -238,17 +319,17 @@ void DeckPlayer::processBlock(float* outputBuffer, uint32_t numSamples, uint32_t
             }
         }
 
-        double nextPosSec = static_cast<double>(currentFrame) / loadedAudio_.sampleRate;
-        playbackPosition_.store(nextPosSec);
+        double nextPosSec = static_cast<double>(currentFrame) / audio->sampleRate;
+        playbackPosition_.store(nextPosSec, std::memory_order_release);
 
         if (currentFrame >= totalFrames) {
-            isPlaying_.store(false);
+            isPlaying_.store(false, std::memory_order_release);
+            playbackState_.store(DeckPlaybackState::Ready, std::memory_order_release);
         }
         return;
     }
 
     // 2. Pitch-Preserved Time-Stretched Playback
-    // Ensure scratch buffers are large enough
     size_t requiredScratch = numSamples * std::max(srcChannels, numChannels);
     if (outputBlockScratch_.size() < requiredScratch) {
         std::memset(outputBuffer, 0, numSamples * numChannels * sizeof(float));
@@ -261,7 +342,7 @@ void DeckPlayer::processBlock(float* outputBuffer, uint32_t numSamples, uint32_t
         uint32_t framesToRead = static_cast<uint32_t>(std::min(static_cast<uint64_t>(chunkSize), totalFrames - currentFrame));
         if (framesToRead == 0) break;
 
-        const float* srcPtr = &loadedAudio_.samples[currentFrame * srcChannels];
+        const float* srcPtr = &audio->samples[currentFrame * srcChannels];
         stretchEngine_->putSamples(srcPtr, framesToRead);
         currentFrame += framesToRead;
     }
@@ -297,28 +378,42 @@ void DeckPlayer::processBlock(float* outputBuffer, uint32_t numSamples, uint32_t
         }
     }
 
-    double nextPosSec = static_cast<double>(currentFrame) / loadedAudio_.sampleRate;
-    playbackPosition_.store(nextPosSec);
+    double nextPosSec = static_cast<double>(currentFrame) / audio->sampleRate;
+    playbackPosition_.store(nextPosSec, std::memory_order_release);
 
     if (currentFrame >= totalFrames && stretchEngine_->numAvailableSamples() == 0 && received < numSamples) {
-        isPlaying_.store(false);
+        isPlaying_.store(false, std::memory_order_release);
+        playbackState_.store(DeckPlaybackState::Ready, std::memory_order_release);
     }
 }
 
 DeckStateC DeckPlayer::getState() const noexcept {
-    DeckStateC state;
+    DeckStateC state{};
     state.deck_id = deckId_;
-    state.is_playing = isPlaying_.load() ? 1 : 0;
-    state.playback_position_seconds = playbackPosition_.load();
-    state.volume = volume_.load();
-    state.low_eq = lowEq_.load();
-    state.mid_eq = midEq_.load();
-    state.high_eq = highEq_.load();
-    state.filter = filter_.load();
-    state.vocal_stem_vol = vocalStem_.load();
-    state.drum_stem_vol = drumStem_.load();
-    state.bass_stem_vol = bassStem_.load();
-    state.other_stem_vol = otherStem_.load();
+    state.is_playing = isPlaying_.load(std::memory_order_relaxed) ? 1 : 0;
+    state.playback_state = static_cast<uint8_t>(playbackState_.load(std::memory_order_relaxed));
+    state.preserve_pitch = preservePitch_.load(std::memory_order_relaxed) ? 1 : 0;
+    state.playback_position_seconds = playbackPosition_.load(std::memory_order_relaxed);
+
+    const DecodedAudio* audio = activeAudio_.load(std::memory_order_relaxed);
+    if (audio) {
+        state.duration_seconds = audio->durationSeconds;
+        state.bpm = audio->detectedBpm;
+    } else {
+        state.duration_seconds = 0.0;
+        state.bpm = 0.0;
+    }
+
+    state.tempo_ratio = tempoRatio_.load(std::memory_order_relaxed);
+    state.volume = volume_.load(std::memory_order_relaxed);
+    state.low_eq = lowEq_.load(std::memory_order_relaxed);
+    state.mid_eq = midEq_.load(std::memory_order_relaxed);
+    state.high_eq = highEq_.load(std::memory_order_relaxed);
+    state.filter = filter_.load(std::memory_order_relaxed);
+    state.vocal_stem_vol = vocalStem_.load(std::memory_order_relaxed);
+    state.drum_stem_vol = drumStem_.load(std::memory_order_relaxed);
+    state.bass_stem_vol = bassStem_.load(std::memory_order_relaxed);
+    state.other_stem_vol = otherStem_.load(std::memory_order_relaxed);
     return state;
 }
 
