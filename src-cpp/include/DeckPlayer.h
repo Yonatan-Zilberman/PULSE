@@ -43,9 +43,9 @@ public:
     bool prepareTrack(const std::string& filePath, double cuePositionSec = 0.0, double tempoRatio = 1.0, bool preservePitch = true);
 
     // Playback State Controls
-    void play();
-    void pause();
-    void stop();
+    bool play();
+    bool pause();
+    bool stop();
     void seek(double seconds);
     void setPlaying(bool playing);
     bool isPlaying() const noexcept;
@@ -167,6 +167,10 @@ private:
     // Tempo Scaling State
     std::atomic<double> tempoRatio_{1.0};
     std::atomic<bool> preservePitch_{true};
+
+    // Lock-free Pending Audio Thread Commands
+    std::atomic<double> pendingSeekPosition_{-1.0};
+    std::atomic<bool> pendingDspReset_{false};
 
     // Lock-Free Staged Audio Buffer Management (Zero RT deallocation)
     std::atomic<const DecodedAudio*> activeAudio_{nullptr};

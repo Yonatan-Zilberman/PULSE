@@ -303,33 +303,27 @@ bool AudioEngine::prepareDeck(uint8_t deckId, const std::string& filePath, doubl
 
 bool AudioEngine::playDeck(uint8_t deckId) {
     if (deckId == 0 && deckA_) {
-        deckA_->play();
-        return true;
+        return deckA_->play();
     } else if (deckId == 1 && deckB_) {
-        deckB_->play();
-        return true;
+        return deckB_->play();
     }
     return false;
 }
 
 bool AudioEngine::pauseDeck(uint8_t deckId) {
     if (deckId == 0 && deckA_) {
-        deckA_->pause();
-        return true;
+        return deckA_->pause();
     } else if (deckId == 1 && deckB_) {
-        deckB_->pause();
-        return true;
+        return deckB_->pause();
     }
     return false;
 }
 
 bool AudioEngine::stopDeck(uint8_t deckId) {
     if (deckId == 0 && deckA_) {
-        deckA_->stop();
-        return true;
+        return deckA_->stop();
     } else if (deckId == 1 && deckB_) {
-        deckB_->stop();
-        return true;
+        return deckB_->stop();
     }
     return false;
 }
@@ -347,11 +341,9 @@ bool AudioEngine::seekDeck(uint8_t deckId, double seconds) {
 
 bool AudioEngine::setPlaying(uint8_t deckId, bool isPlaying) {
     if (deckId == 0 && deckA_) {
-        deckA_->setPlaying(isPlaying);
-        return true;
+        return isPlaying ? deckA_->play() : deckA_->pause();
     } else if (deckId == 1 && deckB_) {
-        deckB_->setPlaying(isPlaying);
-        return true;
+        return isPlaying ? deckB_->play() : deckB_->pause();
     }
     return false;
 }

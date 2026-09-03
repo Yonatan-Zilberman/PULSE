@@ -90,10 +90,13 @@ bool DeckPlayer::loadFile(const std::string& filePath) {
 }
 
 bool DeckPlayer::prepareTrack(const std::string& filePath, double cuePositionSec, double tempoRatio, bool preservePitch) {
+    // Immediately stop playback and mark Loading to prevent audio leakage during decoding
+    isPlaying_.store(false, std::memory_order_release);
     playbackState_.store(DeckPlaybackState::Loading, std::memory_order_release);
 
     DecodedAudio decoded;
     if (!AudioDecoder::decodeFile(filePath, decoded)) {
+        activeAudio_.store(nullptr, std::memory_order_release);
         playbackState_.store(DeckPlaybackState::Error, std::memory_order_release);
         return false;
     }
@@ -103,7 +106,8 @@ bool DeckPlayer::prepareTrack(const std::string& filePath, double cuePositionSec
     double clampedCue = std::clamp(cuePositionSec, 0.0, newAudio->durationSeconds);
     cuePosition_.store(clampedCue, std::memory_order_release);
     playbackPosition_.store(clampedCue, std::memory_order_release);
-    isPlaying_.store(false, std::memory_order_release);
+    pendingSeekPosition_.store(-1.0, std::memory_order_release);
+    pendingDspReset_.store(false, std::memory_order_release);
 
     double clampedRatio = std::clamp(tempoRatio, 0.25, 4.0);
     tempoRatio_.store(clampedRatio, std::memory_order_release);
@@ -142,10 +146,15 @@ bool DeckPlayer::prepareTrack(const std::string& filePath, double cuePositionSec
     return true;
 }
 
-void DeckPlayer::play() {
+bool DeckPlayer::play() {
+    DeckPlaybackState state = playbackState_.load(std::memory_order_acquire);
+    if (state == DeckPlaybackState::Loading || state == DeckPlaybackState::Error || state == DeckPlaybackState::Empty) {
+        return false;
+    }
+
     const DecodedAudio* audio = activeAudio_.load(std::memory_order_acquire);
     if (!audio || audio->samples.empty()) {
-        return;
+        return false;
     }
 
     if (playbackPosition_.load(std::memory_order_relaxed) >= audio->durationSeconds) {
@@ -154,25 +163,32 @@ void DeckPlayer::play() {
 
     isPlaying_.store(true, std::memory_order_release);
     playbackState_.store(DeckPlaybackState::Playing, std::memory_order_release);
+    return true;
 }
 
-void DeckPlayer::pause() {
+bool DeckPlayer::pause() {
     isPlaying_.store(false, std::memory_order_release);
     if (activeAudio_.load(std::memory_order_acquire)) {
         playbackState_.store(DeckPlaybackState::Paused, std::memory_order_release);
+        return true;
     }
+    return false;
 }
 
-void DeckPlayer::stop() {
+bool DeckPlayer::stop() {
     isPlaying_.store(false, std::memory_order_release);
     playbackPosition_.store(cuePosition_.load(std::memory_order_relaxed), std::memory_order_release);
+    pendingSeekPosition_.store(-1.0, std::memory_order_release);
+    pendingDspReset_.store(true, std::memory_order_release);
     if (stretchEngine_) {
         stretchEngine_->clear();
     }
     resetEq();
     if (activeAudio_.load(std::memory_order_acquire)) {
         playbackState_.store(DeckPlaybackState::Ready, std::memory_order_release);
+        return true;
     }
+    return false;
 }
 
 void DeckPlayer::seek(double seconds) {
@@ -180,14 +196,18 @@ void DeckPlayer::seek(double seconds) {
     double maxDuration = audio ? audio->durationSeconds : 0.0;
     double clamped = std::clamp(seconds, 0.0, maxDuration);
 
-    playbackPosition_.store(clamped, std::memory_order_release);
-    if (stretchEngine_) {
-        stretchEngine_->clear();
-    }
-    resetEq();
-
-    if (!isPlaying_.load(std::memory_order_relaxed) && audio) {
-        cuePosition_.store(clamped, std::memory_order_release);
+    if (isPlaying_.load(std::memory_order_acquire)) {
+        pendingSeekPosition_.store(clamped, std::memory_order_release);
+    } else {
+        playbackPosition_.store(clamped, std::memory_order_release);
+        pendingSeekPosition_.store(-1.0, std::memory_order_release);
+        if (stretchEngine_) {
+            stretchEngine_->clear();
+        }
+        resetEq();
+        if (audio) {
+            cuePosition_.store(clamped, std::memory_order_release);
+        }
     }
 }
 
@@ -208,6 +228,10 @@ void DeckPlayer::setPlaybackPosition(double seconds) {
 }
 
 double DeckPlayer::getPlaybackPosition() const noexcept {
+    double pending = pendingSeekPosition_.load(std::memory_order_relaxed);
+    if (pending >= 0.0) {
+        return pending;
+    }
     return playbackPosition_.load(std::memory_order_relaxed);
 }
 
@@ -274,6 +298,24 @@ void DeckPlayer::processBlock(float* outputBuffer, uint32_t numSamples, uint32_t
     if (!isPlaying_.load(std::memory_order_relaxed) || !audio || audio->samples.empty() || audio->sampleRate == 0) {
         std::memset(outputBuffer, 0, numSamples * numChannels * sizeof(float));
         return;
+    }
+
+    // Real-Time Audio Thread: Process pending seek request atomically
+    double pendingSeek = pendingSeekPosition_.exchange(-1.0, std::memory_order_acq_rel);
+    if (pendingSeek >= 0.0) {
+        playbackPosition_.store(pendingSeek, std::memory_order_release);
+        if (stretchEngine_) {
+            stretchEngine_->clear();
+        }
+        resetEq();
+    }
+
+    // Real-Time Audio Thread: Process pending DSP queue reset atomically
+    if (pendingDspReset_.exchange(false, std::memory_order_acq_rel)) {
+        if (stretchEngine_) {
+            stretchEngine_->clear();
+        }
+        resetEq();
     }
 
     double currentPosSec = playbackPosition_.load(std::memory_order_relaxed);
