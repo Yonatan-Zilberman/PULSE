@@ -285,5 +285,32 @@ if(APPLE)
 endif()
 add_test(NAME DualDeckPlaybackTest COMMAND test_dual_deck_playback)
 
+# Production DSP Objective Test Suite
+add_executable(test_production_dsp tests/test_production_dsp.cpp)
+target_link_libraries(test_production_dsp PRIVATE pulse_audio_engine)
+if(APPLE)
+    target_link_libraries(test_production_dsp PRIVATE
+        "-framework CoreAudio"
+        "-framework AudioToolbox"
+        "-framework Accelerate"
+        "-framework CoreFoundation"
+    )
+endif()
+add_test(NAME ProductionDspTest COMMAND test_production_dsp)
+
+# Audio Render Comparison & Regression Tool
+add_executable(pulse_dsp_comparator src/pulse_dsp_comparator.cpp)
+target_link_libraries(pulse_dsp_comparator PRIVATE pulse_audio_engine)
+if(APPLE)
+    target_link_libraries(pulse_dsp_comparator PRIVATE
+        "-framework CoreAudio"
+        "-framework AudioToolbox"
+        "-framework Accelerate"
+        "-framework CoreFoundation"
+    )
+endif()
+add_test(NAME DspComparatorSelfTest COMMAND pulse_dsp_comparator --run-self-test)
+
+
 
 
