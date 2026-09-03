@@ -40,6 +40,7 @@ struct TimeStretchEngine::Impl {
 
     // Scratch buffers for correlation search
     std::vector<float> monoInScratch;
+    double currentSmoothedRatio{1.0};
 
     void initBuffers(const TimeStretchConfig& cfg) {
         config = cfg;
@@ -79,6 +80,7 @@ struct TimeStretchEngine::Impl {
 
         nominalAnalysisPos = 0.0;
         hasInitialGrain = false;
+        currentSmoothedRatio = tempoRatio.load();
     }
 
     void reset() {
@@ -94,6 +96,7 @@ struct TimeStretchEngine::Impl {
         std::fill(prevTarget.begin(), prevTarget.end(), 0.0f);
         nominalAnalysisPos = 0.0;
         hasInitialGrain = false;
+        currentSmoothedRatio = tempoRatio.load();
     }
 
     void writeInQueue(const float* samples, size_t numFrames) {
@@ -157,9 +160,15 @@ struct TimeStretchEngine::Impl {
         // Required input frames before we can safely extract a grain:
         // windowSize + 2 * maxSearchDelta
         size_t neededFrames = windowSize + 2 * maxSearchDelta;
-        double analysisHop = ratio * static_cast<double>(synthHop);
 
         while ((inCount / channels) >= neededFrames) {
+            double targetRatio = tempoRatio.load();
+            currentSmoothedRatio += 0.05 * (targetRatio - currentSmoothedRatio);
+            if (std::abs(currentSmoothedRatio - targetRatio) < 1e-4) {
+                currentSmoothedRatio = targetRatio;
+            }
+            double analysisHop = currentSmoothedRatio * static_cast<double>(synthHop);
+
             if (!hasInitialGrain) {
                 // Initialize with first windowed grain at input offset 0
                 for (uint32_t n = 0; n < windowSize; ++n) {

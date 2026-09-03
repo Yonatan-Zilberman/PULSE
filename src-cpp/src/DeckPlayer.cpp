@@ -9,6 +9,7 @@ DeckPlayer::DeckPlayer(uint8_t deckId)
     : deckId_(deckId),
       stretchEngine_(std::make_unique<TimeStretchEngine>()),
       eqChannels_(8),
+      filterChannels_(8),
       inputBlockScratch_(32768, 0.0f),
       outputBlockScratch_(32768, 0.0f) {
     initCrossoverFilters(48000);
@@ -21,6 +22,7 @@ DeckPlayer::~DeckPlayer() {
 
 void DeckPlayer::initCrossoverFilters(uint32_t sampleRate) noexcept {
     if (sampleRate == 0) sampleRate = 48000;
+    currentSampleRate_ = sampleRate;
 
     constexpr float kPi = 3.14159265358979323846f;
     constexpr float kSqrt2 = 1.41421356237309504880f;
@@ -77,12 +79,80 @@ void DeckPlayer::initCrossoverFilters(uint32_t sampleRate) noexcept {
     eqCoeffs_.coeffApHigh.a2 = (1.0f - alphaHigh) / a0High;
 
     resetEq();
+    initSmoothers(sampleRate);
+}
+
+void DeckPlayer::initSmoothers(uint32_t sampleRate) noexcept {
+    if (sampleRate == 0) sampleRate = 48000;
+    currentSampleRate_ = sampleRate;
+    float sr = static_cast<float>(sampleRate);
+
+    constexpr float kSmoothingTimeSec = 0.008f; // 8ms smoothing window
+    volSmoother_.reset(volume_.load(std::memory_order_relaxed), sr, kSmoothingTimeSec);
+    lowEqSmoother_.reset(lowEq_.load(std::memory_order_relaxed), sr, kSmoothingTimeSec);
+    midEqSmoother_.reset(midEq_.load(std::memory_order_relaxed), sr, kSmoothingTimeSec);
+    highEqSmoother_.reset(highEq_.load(std::memory_order_relaxed), sr, kSmoothingTimeSec);
+    filterSmoother_.reset(filter_.load(std::memory_order_relaxed), sr, kSmoothingTimeSec);
+    vocalStemSmoother_.reset(vocalStem_.load(std::memory_order_relaxed), sr, kSmoothingTimeSec);
+    drumStemSmoother_.reset(drumStem_.load(std::memory_order_relaxed), sr, kSmoothingTimeSec);
+    bassStemSmoother_.reset(bassStem_.load(std::memory_order_relaxed), sr, kSmoothingTimeSec);
+    otherStemSmoother_.reset(otherStem_.load(std::memory_order_relaxed), sr, kSmoothingTimeSec);
 }
 
 void DeckPlayer::resetEq() noexcept {
     for (auto& eq : eqChannels_) {
         eq.reset();
     }
+    for (auto& fc : filterChannels_) {
+        fc.reset();
+    }
+}
+
+void DeckPlayer::updateFilterCoeffs(float filterVal) noexcept {
+    if (std::abs(filterVal) < 1e-4f) {
+        lastFilterVal_ = 0.0f;
+        return;
+    }
+    float sr = static_cast<float>(currentSampleRate_);
+    constexpr float kPi = 3.14159265358979323846f;
+    constexpr float kSqrt2 = 1.41421356237309504880f;
+
+    if (filterVal < 0.0f) {
+        // Low-Pass Filter: sweeps 20,000 Hz down to 50 Hz
+        float norm = -filterVal; // in (0, 1]
+        float fc = 20000.0f * std::pow(0.0025f, norm);
+        fc = std::clamp(fc, 30.0f, sr * 0.48f);
+
+        float omega = 2.0f * kPi * fc / sr;
+        float sn = std::sin(omega);
+        float cs = std::cos(omega);
+        float alpha = sn / (2.0f * (1.0f / kSqrt2));
+        float a0 = 1.0f + alpha;
+
+        filterCoeffs_.b0 = ((1.0f - cs) * 0.5f) / a0;
+        filterCoeffs_.b1 = (1.0f - cs) / a0;
+        filterCoeffs_.b2 = ((1.0f - cs) * 0.5f) / a0;
+        filterCoeffs_.a1 = (-2.0f * cs) / a0;
+        filterCoeffs_.a2 = (1.0f - alpha) / a0;
+    } else {
+        // High-Pass Filter: sweeps 20 Hz up to 15,000 Hz
+        float norm = filterVal; // in (0, 1]
+        float fc = 20.0f * std::pow(750.0f, norm);
+        fc = std::clamp(fc, 20.0f, sr * 0.48f);
+
+        float omega = 2.0f * kPi * fc / sr;
+        float sn = std::sin(omega);
+        float cs = std::cos(omega);
+        float alpha = sn / (2.0f * (1.0f / kSqrt2));
+        float a0 = 1.0f + alpha;
+
+        filterCoeffs_.b0 = ((1.0f + cs) * 0.5f) / a0;
+        filterCoeffs_.b1 = -(1.0f + cs) / a0;
+        filterCoeffs_.b2 = ((1.0f + cs) * 0.5f) / a0;
+        filterCoeffs_.a1 = (-2.0f * cs) / a0;
+        filterCoeffs_.a2 = (1.0f - alpha) / a0;
+    }
+    lastFilterVal_ = filterVal;
 }
 
 bool DeckPlayer::loadFile(const std::string& filePath) {
@@ -322,27 +392,47 @@ void DeckPlayer::processBlock(float* outputBuffer, uint32_t numSamples, uint32_t
     uint64_t currentFrame = static_cast<uint64_t>(std::round(currentPosSec * audio->sampleRate));
     uint32_t srcChannels = audio->channels;
     uint64_t totalFrames = audio->totalFrames;
-    float vol = volume_.load(std::memory_order_relaxed);
     double ratio = tempoRatio_.load(std::memory_order_relaxed);
 
-    float lowVal = lowEq_.load(std::memory_order_relaxed);
-    float midVal = midEq_.load(std::memory_order_relaxed);
-    float highVal = highEq_.load(std::memory_order_relaxed);
-
-    // Map EQ parameters [-1.0, 1.0]: [-1, 0] -> [0, 1], [0, 1] -> [1, 2]
-    float gainLow = std::clamp((lowVal < 0.0f) ? (1.0f + lowVal) : (1.0f + lowVal), 0.0f, 2.0f);
-    float gainMid = std::clamp((midVal < 0.0f) ? (1.0f + midVal) : (1.0f + midVal), 0.0f, 2.0f);
-    float gainHigh = std::clamp((highVal < 0.0f) ? (1.0f + highVal) : (1.0f + highVal), 0.0f, 2.0f);
+    // Update smoother targets from atomic state
+    volSmoother_.setTarget(volume_.load(std::memory_order_relaxed));
+    lowEqSmoother_.setTarget(lowEq_.load(std::memory_order_relaxed));
+    midEqSmoother_.setTarget(midEq_.load(std::memory_order_relaxed));
+    highEqSmoother_.setTarget(highEq_.load(std::memory_order_relaxed));
+    filterSmoother_.setTarget(filter_.load(std::memory_order_relaxed));
+    vocalStemSmoother_.setTarget(vocalStem_.load(std::memory_order_relaxed));
+    drumStemSmoother_.setTarget(drumStem_.load(std::memory_order_relaxed));
+    bassStemSmoother_.setTarget(bassStem_.load(std::memory_order_relaxed));
+    otherStemSmoother_.setTarget(otherStem_.load(std::memory_order_relaxed));
 
     // 1. Fast Path: Unstretched 1.0x Playback
     if (std::abs(ratio - 1.0) < 1e-5 || !preservePitch_.load(std::memory_order_relaxed)) {
         for (uint32_t s = 0; s < numSamples; ++s) {
+            float curVol = volSmoother_.next();
+            float curLow = lowEqSmoother_.next();
+            float curMid = midEqSmoother_.next();
+            float curHigh = highEqSmoother_.next();
+            float curFilter = filterSmoother_.next();
+            float curVocal = vocalStemSmoother_.next();
+            float curDrum = drumStemSmoother_.next();
+            float curBass = bassStemSmoother_.next();
+            float curOther = otherStemSmoother_.next();
+
+            float gainLow = std::clamp(1.0f + curLow, 0.0f, 2.0f);
+            float gainMid = std::clamp(1.0f + curMid, 0.0f, 2.0f);
+            float gainHigh = std::clamp(1.0f + curHigh, 0.0f, 2.0f);
+
+            if ((s & 15) == 0 || std::abs(curFilter - lastFilterVal_) > 0.002f) {
+                updateFilterCoeffs(curFilter);
+            }
+            bool filterActive = (std::abs(curFilter) >= 1e-4f);
+
             if (currentFrame < totalFrames) {
                 for (uint32_t c = 0; c < numChannels; ++c) {
                     uint32_t srcChan = (srcChannels == 1) ? 0 : (c % srcChannels);
                     float rawSample = audio->samples[currentFrame * srcChannels + srcChan];
 
-                    // 3-Band LR4 Crossover Filtering
+                    // 1. 3-Band LR4 Crossover Filtering
                     auto& eq = eqChannels_[c % eqChannels_.size()];
                     float lowRaw = eq.lpLow.process(rawSample, eqCoeffs_.coeffLpLow);
                     float midHigh = eq.hpLow.process(rawSample, eqCoeffs_.coeffHpLow);
@@ -350,8 +440,20 @@ void DeckPlayer::processBlock(float* outputBuffer, uint32_t numSamples, uint32_t
                     float mid = eq.lpHigh.process(midHigh, eqCoeffs_.coeffLpHigh);
                     float high = eq.hpHigh.process(midHigh, eqCoeffs_.coeffHpHigh);
 
-                    float filtered = low * gainLow + mid * gainMid + high * gainHigh;
-                    outputBuffer[s * numChannels + c] = filtered * vol;
+                    // 2. EQ + Stem Mixer Fallback Stage
+                    float eqLow = low * gainLow * curBass;
+                    float eqMid = mid * gainMid * curVocal;
+                    float eqHigh = high * gainHigh * (0.5f * (curDrum + curOther));
+                    float preFilter = eqLow + eqMid + eqHigh;
+
+                    // 3. Bipolar DJ Filter
+                    float filtered = preFilter;
+                    if (filterActive) {
+                        filtered = filterChannels_[c % filterChannels_.size()].process(preFilter, filterCoeffs_);
+                    }
+
+                    // 4. Volume Gain
+                    outputBuffer[s * numChannels + c] = filtered * curVol;
                 }
                 currentFrame++;
             } else {
@@ -397,12 +499,31 @@ void DeckPlayer::processBlock(float* outputBuffer, uint32_t numSamples, uint32_t
     uint32_t received = stretchEngine_->receiveSamples(outputBlockScratch_.data(), numSamples);
 
     for (uint32_t s = 0; s < numSamples; ++s) {
+        float curVol = volSmoother_.next();
+        float curLow = lowEqSmoother_.next();
+        float curMid = midEqSmoother_.next();
+        float curHigh = highEqSmoother_.next();
+        float curFilter = filterSmoother_.next();
+        float curVocal = vocalStemSmoother_.next();
+        float curDrum = drumStemSmoother_.next();
+        float curBass = bassStemSmoother_.next();
+        float curOther = otherStemSmoother_.next();
+
+        float gainLow = std::clamp(1.0f + curLow, 0.0f, 2.0f);
+        float gainMid = std::clamp(1.0f + curMid, 0.0f, 2.0f);
+        float gainHigh = std::clamp(1.0f + curHigh, 0.0f, 2.0f);
+
+        if ((s & 15) == 0 || std::abs(curFilter - lastFilterVal_) > 0.002f) {
+            updateFilterCoeffs(curFilter);
+        }
+        bool filterActive = (std::abs(curFilter) >= 1e-4f);
+
         if (s < received) {
             for (uint32_t c = 0; c < numChannels; ++c) {
                 uint32_t srcChan = (srcChannels == 1) ? 0 : (c % srcChannels);
                 float rawSample = outputBlockScratch_[s * srcChannels + srcChan];
 
-                // 3-Band LR4 Crossover Filtering
+                // 1. 3-Band LR4 Crossover Filtering
                 auto& eq = eqChannels_[c % eqChannels_.size()];
                 float lowRaw = eq.lpLow.process(rawSample, eqCoeffs_.coeffLpLow);
                 float midHigh = eq.hpLow.process(rawSample, eqCoeffs_.coeffHpLow);
@@ -410,8 +531,20 @@ void DeckPlayer::processBlock(float* outputBuffer, uint32_t numSamples, uint32_t
                 float mid = eq.lpHigh.process(midHigh, eqCoeffs_.coeffLpHigh);
                 float high = eq.hpHigh.process(midHigh, eqCoeffs_.coeffHpHigh);
 
-                float filtered = low * gainLow + mid * gainMid + high * gainHigh;
-                outputBuffer[s * numChannels + c] = filtered * vol;
+                // 2. EQ + Stem Mixer Fallback Stage
+                float eqLow = low * gainLow * curBass;
+                float eqMid = mid * gainMid * curVocal;
+                float eqHigh = high * gainHigh * (0.5f * (curDrum + curOther));
+                float preFilter = eqLow + eqMid + eqHigh;
+
+                // 3. Bipolar DJ Filter
+                float filtered = preFilter;
+                if (filterActive) {
+                    filtered = filterChannels_[c % filterChannels_.size()].process(preFilter, filterCoeffs_);
+                }
+
+                // 4. Volume Gain
+                outputBuffer[s * numChannels + c] = filtered * curVol;
             }
         } else {
             for (uint32_t c = 0; c < numChannels; ++c) {

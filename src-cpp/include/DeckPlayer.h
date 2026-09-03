@@ -3,6 +3,7 @@
 #include "AudioBridgeTypes.h"
 #include "AudioDecoder.h"
 #include "TimeStretchEngine.h"
+#include "ParameterSmoother.h"
 #include <string>
 #include <atomic>
 #include <memory>
@@ -20,7 +21,8 @@ enum class DeckPlaybackState : uint8_t {
 };
 
 /**
- * @brief Real-time Deck Audio Player with Pitch-Preserving Time-Stretching.
+ * @brief Real-time Deck Audio Player with Pitch-Preserving Time-Stretching,
+ * 3-Band LR4 Isolator EQ, Bipolar DJ Filter, and Parameter Smoothing.
  *
  * REAL-TIME SAFETY CONTRACT:
  * - The processBlock() method runs directly on the high-priority OS audio thread.
@@ -73,6 +75,7 @@ public:
 
     uint8_t getDeckId() const noexcept { return deckId_; }
     void initCrossoverFilters(uint32_t sampleRate) noexcept;
+    void initSmoothers(uint32_t sampleRate) noexcept;
 
     // Audio callback processing block (Real-Time thread)
     void processBlock(float* outputBuffer, uint32_t numSamples, uint32_t numChannels) noexcept;
@@ -148,8 +151,23 @@ public:
         BiquadCoeffs coeffHpHigh;
     };
 
+    struct DJFilterChannel {
+        BiquadState stage;
+
+        void reset() noexcept {
+            stage.reset();
+        }
+
+        inline float process(float in, const BiquadCoeffs& c) noexcept {
+            return stage.process(in, c);
+        }
+    };
+
 private:
+    void updateFilterCoeffs(float filterVal) noexcept;
+
     uint8_t deckId_;
+    uint32_t currentSampleRate_{48000};
     std::atomic<DeckPlaybackState> playbackState_{DeckPlaybackState::Empty};
     std::atomic<bool> isPlaying_{false};
     std::atomic<double> playbackPosition_{0.0};
@@ -182,6 +200,22 @@ private:
     // 3-Band DSP EQ State & Coefficients
     ThreeBandEqCoeffs eqCoeffs_{};
     std::vector<ThreeBandChannelEq> eqChannels_{2}; // Pre-allocated stereo channels
+
+    // Bipolar DJ Filter State & Coefficients
+    BiquadCoeffs filterCoeffs_{};
+    std::vector<DJFilterChannel> filterChannels_{2};
+    float lastFilterVal_{0.0f};
+
+    // Parameter Smoothers (Real-time safe, sample-by-sample)
+    ParameterSmoother volSmoother_;
+    ParameterSmoother lowEqSmoother_;
+    ParameterSmoother midEqSmoother_;
+    ParameterSmoother highEqSmoother_;
+    ParameterSmoother filterSmoother_;
+    ParameterSmoother vocalStemSmoother_;
+    ParameterSmoother drumStemSmoother_;
+    ParameterSmoother bassStemSmoother_;
+    ParameterSmoother otherStemSmoother_;
 
     // Pre-allocated Real-Time scratch buffers
     std::vector<float> inputBlockScratch_;

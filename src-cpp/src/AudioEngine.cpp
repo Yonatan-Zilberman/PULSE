@@ -204,6 +204,9 @@ int AudioEngine::initialize(const AudioEngineConfigC& config) {
 
     if (deckA_) deckA_->initCrossoverFilters(config.sample_rate);
     if (deckB_) deckB_->initCrossoverFilters(config.sample_rate);
+    if (mixer_) {
+        mixer_->init(config.sample_rate);
+    }
 
     totalFramesProcessed_.store(0, std::memory_order_relaxed);
     underrunCount_.store(0, std::memory_order_relaxed);
@@ -463,11 +466,13 @@ int AudioEngine::executeTransition(const TransitionCommandC& command) {
 void AudioEngine::audioDeviceAboutToStart(juce::AudioIODevice* /*device*/) {
     if (deckA_) deckA_->resetEq();
     if (deckB_) deckB_->resetEq();
+    if (mixer_) mixer_->reset();
 }
 
 void AudioEngine::audioDeviceStopped() {
     if (deckA_) deckA_->resetEq();
     if (deckB_) deckB_->resetEq();
+    if (mixer_) mixer_->reset();
 }
 
 void AudioEngine::audioDeviceIOCallbackWithContext(
