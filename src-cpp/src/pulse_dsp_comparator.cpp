@@ -271,6 +271,70 @@ int main(int argc, char* argv[]) {
             results.push_back(m);
         }
 
+        // 3. Profile: Tempo-Change Scaling (pitch-preserved time-stretch)
+        {
+            constexpr uint32_t blockSize = 512;
+
+            // Unity render (ratio 1.0 -> fast path). Mirrors profile #1's proven setup.
+            pulse::audio::DeckPlayer deckUnity(0);
+            deckUnity.loadFile(refWavPath);
+            deckUnity.setVolume(1.0f);
+            deckUnity.setEq(0.0f, 0.0f, 0.0f);
+            deckUnity.setFilter(0.0f);
+            deckUnity.setStemLevels(1.0f, 1.0f, 1.0f, 1.0f);
+            deckUnity.setPlaying(true);
+            std::vector<float> unityOut(totalFrames * kChannels, 0.0f);
+            for (uint64_t f = 0; f < totalFrames; f += blockSize) {
+                uint32_t toProcess = static_cast<uint32_t>(std::min<uint64_t>(blockSize, totalFrames - f));
+                deckUnity.processBlock(unityOut.data() + f * kChannels, toProcess, kChannels);
+            }
+
+            // Stretched render (ratio 1.10, pitch preserved -> time-stretch path). Tempo/preserve
+            // must be set before loadFile so prepareTrack picks them up.
+            pulse::audio::DeckPlayer deckStretch(1);
+            deckStretch.setTempoRatio(1.10);
+            deckStretch.setPitchPreservation(true);
+            deckStretch.loadFile(refWavPath);
+            deckStretch.setVolume(1.0f);
+            deckStretch.setEq(0.0f, 0.0f, 0.0f);
+            deckStretch.setFilter(0.0f);
+            deckStretch.setStemLevels(1.0f, 1.0f, 1.0f, 1.0f);
+            deckStretch.setPlaying(true);
+            std::vector<float> stretchOut(totalFrames * kChannels, 0.0f);
+            for (uint64_t f = 0; f < totalFrames; f += blockSize) {
+                uint32_t toProcess = static_cast<uint32_t>(std::min<uint64_t>(blockSize, totalFrames - f));
+                deckStretch.processBlock(stretchOut.data() + f * kChannels, toProcess, kChannels);
+            }
+
+            // Same source at a different tempo yields genuinely different output, but must never clip.
+            ComparisonMetrics m;
+            m.profileName = "Tempo Change Scaling (+10%)";
+            m.totalFrames = totalFrames;
+            m.sampleRate = kSampleRate;
+            m.channels = kChannels;
+            double maxDelta = 0.0;
+            uint64_t clipCount = 0;
+            float peak = 0.0f;
+            for (uint64_t f = 0; f < totalFrames; ++f) {
+                for (uint32_t c = 0; c < kChannels; ++c) {
+                    const float ud = std::abs(unityOut[f * kChannels + c] - stretchOut[f * kChannels + c]);
+                    if (ud > maxDelta) maxDelta = ud;
+                    const float mp = std::max(std::abs(unityOut[f * kChannels + c]),
+                                              std::abs(stretchOut[f * kChannels + c]));
+                    if (mp > peak) peak = mp;
+                    if (mp >= 1.0f) clipCount++;
+                }
+            }
+            m.maxAbsDelta = static_cast<float>(maxDelta);
+            m.clippedSampleCount = clipCount;
+            m.passed = (maxDelta > 0.001f && clipCount == 0 && peak <= 0.999f);
+            if (!m.passed) {
+                m.failureReason = "Tempo change produced no signal difference or clipped "
+                    "(delta=" + std::to_string(maxDelta) + ", clips=" + std::to_string(clipCount) + ")";
+            }
+            results.push_back(m);
+        }
+
         std::filesystem::remove_all(tmpDir);
     } else {
         // Compare external reference vs candidate file
