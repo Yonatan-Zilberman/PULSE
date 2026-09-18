@@ -4,6 +4,7 @@
 #include "DeckPlayer.h"
 #include "Mixer.h"
 #include "TransitionExecutor.h"
+#include "TempoStrategy.h"
 #include <memory>
 #include <atomic>
 #include <vector>
@@ -86,6 +87,17 @@ public:
     bool setDeckEq(uint8_t deckId, float low, float mid, float high);
     bool setDeckFilter(uint8_t deckId, float filterVal);
     bool setDeckTempoRatio(uint8_t deckId, double ratio);
+
+    // Tempo Matching (Control Plane — NOT real-time audio thread)
+    // Computes a bounded tempo-match decision from both decks' detected BPMs and applies the
+    // matched ratios to each deck via setTempoRatio. Returns the decision for telemetry.
+    // Safe to call from prepare/FFI/CLI control plane; never invoke from processAudioBlock.
+    TempoStrategyDecision matchTempo(uint8_t sourceDeckId, uint8_t destDeckId,
+                                     TempoStrategyMode mode = TempoStrategyMode::Source,
+                                     double masterTargetBpm = 0.0,
+                                     double maxStretchPct = 6.0,
+                                     bool forceStretch = false);
+
     bool setDeckPitchPreservation(uint8_t deckId, bool enabled);
     bool setDeckStemLevels(uint8_t deckId, float vocal, float drum, float bass, float other);
     DeckStateC getDeckState(uint8_t deckId) const noexcept;

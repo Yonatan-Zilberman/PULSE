@@ -1,4 +1,5 @@
 #include "../include/AudioEngine.h"
+#include "../include/TempoStrategy.h"
 #include <algorithm>
 #include <cstring>
 #include <cmath>
@@ -393,6 +394,38 @@ bool AudioEngine::setDeckTempoRatio(uint8_t deckId, double ratio) {
         return true;
     }
     return false;
+}
+
+TempoStrategyDecision AudioEngine::matchTempo(uint8_t sourceDeckId, uint8_t destDeckId,
+                                              TempoStrategyMode mode, double masterTargetBpm,
+                                              double maxStretchPct, bool forceStretch) {
+    DeckPlayer* src = getDeck(sourceDeckId);
+    DeckPlayer* dst = getDeck(destDeckId);
+    if (!src || !dst) return TempoStrategyDecision{};
+
+    const DecodedAudio& a = src->getDecodedAudio();
+    const DecodedAudio& b = dst->getDecodedAudio();
+    double bpmA = (a.detectedBpm > 0.0) ? a.detectedBpm : 120.0;
+    double bpmB = (b.detectedBpm > 0.0) ? b.detectedBpm : 120.0;
+
+    TempoStrategyDecision decision = TempoStrategy::evaluate(
+        bpmA, bpmB,
+        a.tempoProfile.alternativeHypotheses,
+        b.tempoProfile.alternativeHypotheses,
+        mode, masterTargetBpm, maxStretchPct, forceStretch);
+
+    // Apply matched ratios through the existing per-deck setters (RT-safe control plane).
+    // When the bounded strategy rejects direct stretching (> threshold, not forceStretched), keep
+    // native 1.0x playback so the flagged degradation is actually avoided; the caller then acts on
+    // decision.rejectionReason / recommendedTransitionType to choose an alternative transition.
+    if (decision.stretchExceededThreshold && !forceStretch) {
+        src->setTempoRatio(1.0);
+        dst->setTempoRatio(1.0);
+    } else {
+        src->setTempoRatio(decision.effectiveDeckATempoRatio);
+        dst->setTempoRatio(decision.effectiveDeckBTempoRatio);
+    }
+    return decision;
 }
 
 bool AudioEngine::setDeckPitchPreservation(uint8_t deckId, bool enabled) {
