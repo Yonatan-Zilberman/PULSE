@@ -298,6 +298,18 @@ if(APPLE)
 endif()
 add_test(NAME ProductionDspTest COMMAND test_production_dsp)
 
+add_executable(test_engine_tempo_match tests/test_engine_tempo_match.cpp)
+target_link_libraries(test_engine_tempo_match PRIVATE pulse_audio_engine)
+if(APPLE)
+    target_link_libraries(test_engine_tempo_match PRIVATE
+        "-framework CoreAudio"
+        "-framework AudioToolbox"
+        "-framework Accelerate"
+        "-framework CoreFoundation"
+    )
+endif()
+add_test(NAME EngineTempoMatchTest COMMAND test_engine_tempo_match)
+
 # Audio Render Comparison & Regression Tool
 add_executable(pulse_dsp_comparator src/pulse_dsp_comparator.cpp)
 target_link_libraries(pulse_dsp_comparator PRIVATE pulse_audio_engine)
