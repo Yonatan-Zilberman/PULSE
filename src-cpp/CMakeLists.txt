@@ -261,6 +261,18 @@ if(APPLE)
 endif()
 add_test(NAME RealtimeSafetyTest COMMAND test_realtime_safety)
 
+add_executable(test_transition_executor tests/test_transition_executor.cpp)
+target_link_libraries(test_transition_executor PRIVATE pulse_audio_engine)
+if(APPLE)
+    target_link_libraries(test_transition_executor PRIVATE
+        "-framework CoreAudio"
+        "-framework AudioToolbox"
+        "-framework Accelerate"
+        "-framework CoreFoundation"
+    )
+endif()
+add_test(NAME TransitionExecutorTest COMMAND test_transition_executor)
+
 add_executable(test_coreaudio_live tests/test_coreaudio_live.cpp)
 target_link_libraries(test_coreaudio_live PRIVATE pulse_audio_engine)
 if(APPLE)

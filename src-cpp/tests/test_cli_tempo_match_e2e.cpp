@@ -115,14 +115,18 @@ int main() {
         if (currentTime >= transStartSec && !transitionTriggered) {
             deckB->setPlaybackPosition(cueBSec * tempoDecision.effectiveDeckBTempoRatio);
             deckB->setPlaying(true);
-            TransitionCommandC cmd{0, 1, transDuration, 1};
+            TransitionCommandC cmd{};
+            cmd.version = 1;
+            cmd.source_deck = 0;
+            cmd.destination_deck = 1;
+            cmd.duration_seconds = transDuration;
+            cmd.transition_type = 1; // EqCrossfade
             transExec->startTransition(cmd);
             transitionTriggered = true;
         }
 
-        if (transitionTriggered && currentTime >= transStartSec) {
-            transExec->updateAutomation(currentTime - transStartSec, *mixer);
-        }
+        // The engine auto-advances the transition each block (executor::processBlock),
+        // including the completion restore; no manual updateAutomation drive here.
 
         engine.processAudioBlock(block.data(), kBlockSize, kChannels);
         renderedMix.insert(renderedMix.end(), block.begin(), block.end());

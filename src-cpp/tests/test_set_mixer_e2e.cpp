@@ -137,14 +137,17 @@ int main() {
         dstDeck->setPlaybackPosition(transCueSec * tempoDecision.effectiveDeckBTempoRatio);
         dstDeck->setPlaying(true);
 
-        TransitionCommandC cmd{srcDeckId, dstDeckId, transDurationSec, 2}; // 2 = BassSwap
+        TransitionCommandC cmd{};
+        cmd.version = 1;
+        cmd.source_deck = srcDeckId;
+        cmd.destination_deck = dstDeckId;
+        cmd.duration_seconds = transDurationSec;
+        cmd.transition_type = 2; // BassSwap
         transExec->startTransition(cmd);
 
-        // Render transition
+        // Render transition (the engine auto-advances the executor each block,
+        // including the completion restore; no manual updateAutomation drive here).
         while (masterCurrentTime < mixEndMasterSec) {
-            double elapsedTrans = masterCurrentTime - mixStartMasterSec;
-            transExec->updateAutomation(elapsedTrans, *mixer, deckA, deckB);
-
             engine.processAudioBlock(blockBuffer.data(), kBlockSize, kChannels);
             renderedMaster.insert(renderedMaster.end(), blockBuffer.begin(), blockBuffer.end());
             masterCurrentTime += dt;

@@ -77,8 +77,13 @@ int main() {
     assert(engine.setPlaying(1, true));
 
 
-    // Start a bass swap transition
-    TransitionCommandC cmd{0, 1, 4.0, 2};
+    // Start a bass swap transition (v2 full-plan command; remaining fields keep safe defaults)
+    TransitionCommandC cmd{};
+    cmd.version = 1;
+    cmd.source_deck = 0;
+    cmd.destination_deck = 1;
+    cmd.duration_seconds = 4.0;
+    cmd.transition_type = 2; // BassSwap
     assert(engine.executeTransition(cmd) == 0);
 
     // Warm up one block to prime any static buffers

@@ -92,8 +92,13 @@ int main() {
     assert(pulse_audio_stop_deck(0) == 0);
     assert(pulse_audio_is_deck_playing(0) == 0);
 
-    // 6. Test Transition Command Execution
-    TransitionCommandC cmd{0, 1, 15.0, 1};
+    // 6. Test Transition Command Execution (v2 full-plan command; remaining fields keep safe defaults)
+    TransitionCommandC cmd{};
+    cmd.version = 1;
+    cmd.source_deck = 0;
+    cmd.destination_deck = 1;
+    cmd.duration_seconds = 15.0;
+    cmd.transition_type = 1; // EqCrossfade
     int transRes = pulse_audio_execute_transition(cmd);
     assert(transRes == 0);
     std::cout << "Transition command executed successfully." << std::endl;

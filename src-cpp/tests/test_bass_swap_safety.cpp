@@ -59,7 +59,12 @@ int main() {
         mixer->setCrossfader(-1.0f);
         mixer->setMasterVolume(1.0f);
 
-        TransitionCommandC cmd{0, 1, 4.0, 2}; // 2 = BassSwap
+        TransitionCommandC cmd{};
+        cmd.version = 1;
+        cmd.source_deck = 0;
+        cmd.destination_deck = 1;
+        cmd.duration_seconds = 4.0;
+        cmd.transition_type = 2; // BassSwap
         transExec->startTransition(cmd);
 
         uint32_t blockSize = 512;
@@ -69,7 +74,7 @@ int main() {
         double currentTime = 0.0;
 
         while (currentTime < 4.0) {
-            transExec->updateAutomation(currentTime, *mixer, deckA, deckB);
+            // The engine auto-advances the transition each block (executor::processBlock).
             engine.processAudioBlock(block.data(), blockSize, channels);
 
             for (float s : block) {
@@ -113,7 +118,12 @@ int main() {
         mixer->setCrossfader(-1.0f);
         mixer->setMasterVolume(1.0f);
 
-        TransitionCommandC cmd{0, 1, 4.0, 0}; // 0 = PhraseCrossfade
+        TransitionCommandC cmd{};
+        cmd.version = 1;
+        cmd.source_deck = 0;
+        cmd.destination_deck = 1;
+        cmd.duration_seconds = 4.0;
+        cmd.transition_type = 0; // PhraseCrossfade
         transExec->startTransition(cmd);
 
         uint32_t blockSize = 512;
@@ -123,7 +133,7 @@ int main() {
         double currentTime = 0.0;
 
         while (currentTime < 4.0) {
-            transExec->updateAutomation(currentTime, *mixer, deckA, deckB);
+            // The engine auto-advances the transition each block (executor::processBlock).
             engine.processAudioBlock(block.data(), blockSize, channels);
 
             for (float s : block) {
