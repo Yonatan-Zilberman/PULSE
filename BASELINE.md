@@ -53,7 +53,8 @@
 - **Objective Gain Safety:** Energy conservation guarantees that low-frequency sum remains strictly bounded ($\le +0.5\text{ dB}$ vs $> +2.5\text{ dB}$ swelling in naive crossfades), eliminating low-end buildup, phase mud, and limiter clipping.
 - **Pitch-Preserving Time-Stretching:** `TimeStretchEngine.cpp` implementing real-time safe, pitch-invariant WSOLA time-stretching (0.0 semitone pitch shift) with SoundTouch dynamic linkage isolation.
 - **Golden Fixture Corpus (25 Tracks):** `generate_fixtures.cpp` generating 25 distinct golden tracks (`golden_track_01.wav` .. `golden_track_25.wav`) in `tests/golden-set/` spanning 118–130 BPM, diverse Camelot keys, 8-bar musical phrase pulses, and $60\text{ Hz}$ sub-bass foundations.
-- **Test Suite (17 CTest Targets):**
+- **Production Transition Executor:** `TransitionExecutor.cpp` executing a fully precomputed, versioned (v2) `TransitionCommandC` plan over the C ABI — parameter sanitization (non-finite → safe defaults, bounds clamp, monotonic phases, structural rejection), the Tech Design §9.1 **Classic EQ Blend** reference transition (silent sync → fader + bass handoff + gain staging → vocal stem handoff → cut + tempo return ramp), seqlock lock-free handoff driven from the engine's real-time block paths, and baseline restore on completion.
+- **Test Suite (22 CTest Targets):**
   - `test_audio_bridge` (`AudioBridgeSmokeTest`): C ABI size, alignment, lifecycle, and telemetry tests.
   - `test_audio_decoder` (`AudioDecoderTest`): Steady 120/128 BPM, ambiguous 70/140 BPM, drifting tempo, syncopated rhythm with silence intro, and corrupt/empty file error tests.
   - `test_mixer_dsp` (`MixerDSPTest`): Equal-power crossfader, volume scaling, and peak limiter tests.
@@ -70,6 +71,7 @@
   - `test_cli_set_flags_e2e` (`CliSetFlagsEndToEndTest`): E2E verification of CLI arguments (`--playlist`, `--track-dir`, `--tracks`, `--auto-sequence`, `--export-snippets`), multi-track mix rendering, and error handling.
   - `test_audio_engine_lifecycle` (`AudioEngineLifecycleTest`): Comprehensive state machine transitions, invalid config rejection, re-initialization under load, and active playback teardown.
   - `test_realtime_safety` (`RealtimeSafetyTest`): Zero heap allocations assertions across 1,000 blocks of simulated and live DSP callbacks.
+  - `test_transition_executor` (`TransitionExecutorTest`): Transition executor sanitization matrix (NaN/Inf/out-of-bounds per v2 field), malformed-plan rejection, Classic EQ Blend bit-determinism across engine re-initialization, zero-allocation real-time contract across 1,500 live-callback blocks (no seek/reload/stop), engine-driven live advance, and C FFI accept/reject.
   - `test_production_dsp` (`ProductionDspTest`): Objective real-time DSP tests for the production signal chain — unity bypass, gain bounds, parameter smoothing (no zipper noise), stem-mixer fallback, safe master soft-limiter clipping prevention ($\le 0.999$), and dynamic tempo-adjustment duration scaling.
   - `test_engine_tempo_match` (`EngineTempoMatchTest`): Engine-level tempo matching via `AudioEngine::matchTempo` — Source match ratios (120/125 BPM $\to$ 0.96), octave match (120/60 BPM $\to$ ratio 1.0/1.0), >6% stretch rejection flag, and RT-path tempo scaling through `processAudioBlock` with no master clipping.
   - `test_coreaudio_live` (`CoreAudioLiveTest`): Live hardware callback verification streaming audio to default macOS CoreAudio output with frame progress and zero underruns.
@@ -94,8 +96,8 @@
 | **Frontend Unit Tests** | `pnpm test` | Vitest React & Zustand store tests |
 | **Rust Formatting** | `cargo fmt --manifest-path src-tauri/Cargo.toml -- --check` | Rustfmt style adherence |
 | **Rust Linting** | `cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings` | Zero clippy warnings |
-| **Rust Core Unit Tests** | `cargo test --manifest-path src-tauri/Cargo.toml` | 23 unit tests (SetPlanner sequencing over 25 tracks, Camelot harmonic distance, Serde roundtrips, Candidate scoring, SQLite DDL) |
-| **C++ Build & CTest Suite** | `cmake -B src-cpp/build -S src-cpp && cmake --build src-cpp/build && ctest --test-dir src-cpp/build --output-on-failure` | 17 CTest suites (including AudioEngineLifecycleTest, RealtimeSafetyTest, CoreAudioLiveTest) |
+| **Rust Core Unit Tests** | `cargo test --manifest-path src-tauri/Cargo.toml` | 31 unit tests (SetPlanner sequencing over 25 tracks, Camelot harmonic distance, Serde roundtrips, Candidate scoring, SQLite DDL, v2 C-ABI layout, TransitionPlan sanitization) |
+| **C++ Build & CTest Suite** | `cmake -B src-cpp/build -S src-cpp && cmake --build src-cpp/build && ctest --test-dir src-cpp/build --output-on-failure` | 22 CTest suites (including AudioEngineLifecycleTest, RealtimeSafetyTest, TransitionExecutorTest, CoreAudioLiveTest) |
 | **Live CoreAudio Probe** | `./src-cpp/build/test_coreaudio_live` | Validates real-time audio output callback execution on macOS hardware |
 | **Phase 0 Golden Set Mix (20 Transitions)** | `./src-cpp/build/pulse_cli --track-dir tests/golden-set --min-transitions 20 --transition-strategy bass_swap --phrase-aware --phrase-bars 8 --tempo-strategy source --export-snippets --out tests/audio/phase0_master_set.wav --report tests/audio/phase0_set_report.json` | 20-transition automated continuous set mix, master WAV, 20 snippet WAVs, and JSON report |
 
