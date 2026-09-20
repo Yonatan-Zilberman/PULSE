@@ -730,14 +730,18 @@ int main(int argc, char* argv[]) {
         else if (transitionStrategy == "eq_crossfade") transType = 1;
         else if (transitionStrategy == "bass_swap") transType = 2;
 
-        TransitionCommandC cmd{srcDeckId, dstDeckId, transDurationSec, transType};
+        TransitionCommandC cmd{};
+        cmd.version = 1;
+        cmd.source_deck = srcDeckId;
+        cmd.destination_deck = dstDeckId;
+        cmd.duration_seconds = transDurationSec;
+        cmd.transition_type = transType;
         transExec->startTransition(cmd);
 
-        // Step 3c: Render through the active transition window
+        // Step 3c: Render through the active transition window.
+        // The engine now auto-advances the transition each block (executor::processBlock),
+        // including the completion restore, so no manual automation drive is needed here.
         while (masterCurrentTime < mixEndMasterSec) {
-            double elapsedTrans = masterCurrentTime - mixStartMasterSec;
-            transExec->updateAutomation(elapsedTrans, *mixer, deckA, deckB);
-
             engine.processAudioBlock(blockBuffer.data(), blockSize, channels);
             renderedMaster.insert(renderedMaster.end(), blockBuffer.begin(), blockBuffer.end());
             masterCurrentTime += dt;

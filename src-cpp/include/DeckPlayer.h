@@ -62,10 +62,18 @@ public:
     float getVolume() const noexcept;
 
     void setEq(float low, float mid, float high);
+    float getEqLow() const noexcept;
+    float getEqMid() const noexcept;
+    float getEqHigh() const noexcept;
     void setFilter(float filterVal);
+    float getFilter() const noexcept;
     void resetEq() noexcept;
 
     void setStemLevels(float vocal, float drum, float bass, float other);
+    float getVocalStem() const noexcept;
+    float getDrumStem() const noexcept;
+    float getBassStem() const noexcept;
+    float getOtherStem() const noexcept;
 
     // Tempo and Pitch-Preservation Controls
     void setTempoRatio(double ratio);

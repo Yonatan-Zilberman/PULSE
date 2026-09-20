@@ -490,8 +490,7 @@ double AudioEngine::getDeckDuration(uint8_t deckId) const noexcept {
 
 int AudioEngine::executeTransition(const TransitionCommandC& command) {
     if (transitionExecutor_) {
-        transitionExecutor_->startTransition(command);
-        return 0;
+        return transitionExecutor_->startTransition(command);
     }
     return -1;
 }
@@ -536,6 +535,12 @@ void AudioEngine::audioDeviceIOCallbackWithContext(
         return;
     }
 
+    // Transition automation (real-time): consumes pending full-plan handoff, advances the
+    // transition clock for the block about to be rendered, applies the active strategy.
+    if (transitionExecutor_ && mixer_) {
+        transitionExecutor_->processBlock(samples, config_.sample_rate, *mixer_, deckA_.get(), deckB_.get());
+    }
+
     // Process Deck A & B
     deckA_->processBlock(deckABuffer_.data(), samples, 2);
     deckB_->processBlock(deckBBuffer_.data(), samples, 2);
@@ -578,6 +583,12 @@ void AudioEngine::processAudioBlock(float* outMasterBuffer, uint32_t numSamples,
         std::memset(outMasterBuffer, 0, numSamples * numChannels * sizeof(float));
         recordUnderrun();
         return;
+    }
+
+    // Transition automation (real-time): runs before deck processing so the block being
+    // rendered already sees the automated parameters (deterministic block-granular clock).
+    if (transitionExecutor_ && mixer_) {
+        transitionExecutor_->processBlock(numSamples, config_.sample_rate, *mixer_, deckA_.get(), deckB_.get());
     }
 
     deckA_->processBlock(deckABuffer_.data(), numSamples, numChannels);

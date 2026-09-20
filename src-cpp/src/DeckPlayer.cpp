@@ -329,8 +329,24 @@ void DeckPlayer::setEq(float low, float mid, float high) {
     highEq_.store(std::clamp(high, -1.0f, 1.0f), std::memory_order_relaxed);
 }
 
+float DeckPlayer::getEqLow() const noexcept {
+    return lowEq_.load(std::memory_order_relaxed);
+}
+
+float DeckPlayer::getEqMid() const noexcept {
+    return midEq_.load(std::memory_order_relaxed);
+}
+
+float DeckPlayer::getEqHigh() const noexcept {
+    return highEq_.load(std::memory_order_relaxed);
+}
+
 void DeckPlayer::setFilter(float filterVal) {
     filter_.store(std::clamp(filterVal, -1.0f, 1.0f), std::memory_order_relaxed);
+}
+
+float DeckPlayer::getFilter() const noexcept {
+    return filter_.load(std::memory_order_relaxed);
 }
 
 void DeckPlayer::setStemLevels(float vocal, float drum, float bass, float other) {
@@ -338,6 +354,22 @@ void DeckPlayer::setStemLevels(float vocal, float drum, float bass, float other)
     drumStem_.store(std::clamp(drum, 0.0f, 1.0f), std::memory_order_relaxed);
     bassStem_.store(std::clamp(bass, 0.0f, 1.0f), std::memory_order_relaxed);
     otherStem_.store(std::clamp(other, 0.0f, 1.0f), std::memory_order_relaxed);
+}
+
+float DeckPlayer::getVocalStem() const noexcept {
+    return vocalStem_.load(std::memory_order_relaxed);
+}
+
+float DeckPlayer::getDrumStem() const noexcept {
+    return drumStem_.load(std::memory_order_relaxed);
+}
+
+float DeckPlayer::getBassStem() const noexcept {
+    return bassStem_.load(std::memory_order_relaxed);
+}
+
+float DeckPlayer::getOtherStem() const noexcept {
+    return otherStem_.load(std::memory_order_relaxed);
 }
 
 void DeckPlayer::setTempoRatio(double ratio) {
