@@ -32,6 +32,11 @@ struct TimeStretchEngine::Impl {
     size_t outCount{0};
     size_t outCapacity{0};
 
+    // Total output frames ever written to the queue (monotonic until reset);
+    // lets callers detect stretched-track end even while the engine still has
+    // a (silent) synthesis tail queued.
+    size_t outputFrames{0};
+
     // Synthesis Overlap-Add State
     std::vector<float> overlapBuffer; // size = windowSize * channels
     std::vector<float> prevTarget;    // size = windowSize (mono)
@@ -91,6 +96,7 @@ struct TimeStretchEngine::Impl {
         outReadIndex = 0;
         outWriteIndex = 0;
         outCount = 0;
+        outputFrames = 0;
 
         std::fill(overlapBuffer.begin(), overlapBuffer.end(), 0.0f);
         std::fill(prevTarget.begin(), prevTarget.end(), 0.0f);
@@ -327,6 +333,7 @@ bool TimeStretchEngine::initialize(const TimeStretchConfig& config) {
     if (config.sampleRate == 0 || config.channels == 0) return false;
     config_ = config;
     impl_->initBuffers(config);
+    impl_->outputFrames = 0;
     return true;
 }
 
@@ -368,7 +375,13 @@ uint32_t TimeStretchEngine::receiveSamples(float* outputBuffer, uint32_t maxFram
             impl_->outCount--;
         }
     }
+    impl_->outputFrames += framesToRead;
     return framesToRead;
+}
+
+uint64_t TimeStretchEngine::getOutputFrames() const {
+    if (!impl_) return 0;
+    return static_cast<uint64_t>(impl_->outputFrames);
 }
 
 uint32_t TimeStretchEngine::numAvailableSamples() const {

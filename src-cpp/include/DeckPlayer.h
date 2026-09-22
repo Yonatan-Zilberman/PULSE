@@ -214,6 +214,15 @@ private:
     std::vector<DJFilterChannel> filterChannels_{2};
     float lastFilterVal_{0.0f};
 
+    // Stretched-path end-of-track detection bookkeeping (see processBlock):
+    // the WSOLA synth keeps emitting a silent tail after the source is
+    // exhausted, so the deck stops once the engine has emitted the stretched
+    // remainder. `stretchOutputBase_` is the source frame the engine's output
+    // counter was last (re-)zeroed at (prepare / seek / DSP reset).
+    // Atomic: written on prepare (control thread), read/written on RT.
+    std::atomic<uint64_t> stretchOutputBase_{0};
+    std::atomic<uint64_t> lastStretchOutput_{0};
+
     // Parameter Smoothers (Real-time safe, sample-by-sample)
     ParameterSmoother volSmoother_;
     ParameterSmoother lowEqSmoother_;

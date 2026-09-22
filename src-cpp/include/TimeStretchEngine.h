@@ -92,6 +92,13 @@ public:
     uint32_t numAvailableSamples() const;
 
     /**
+     * @brief Total output frames ever produced (since last clear()/initialize()).
+     *        At tempo ratio R the engine emits ~R x inputFrames frames before
+     *        it can no longer advance, which lets consumers detect end-of-track.
+     */
+    uint64_t getOutputFrames() const;
+
+    /**
      * @brief Flushes all remaining internal state into the output queue.
      */
     void flush();

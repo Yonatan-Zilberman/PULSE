@@ -195,6 +195,12 @@ bool DeckPlayer::prepareTrack(const std::string& filePath, double cuePositionSec
     stretchEngine_->initialize(stretchCfg);
     stretchEngine_->clear();
 
+    // Re-base stretched end-of-track detection on the cue position: the engine
+    // output counter just reset, so the expected total is the stretched length
+    // remaining from here.
+    stretchOutputBase_ = static_cast<uint64_t>(std::round(clampedCue * newAudio->sampleRate));
+    lastStretchOutput_ = 0;
+
     initCrossoverFilters(newAudio->sampleRate);
 
     size_t scratchSize = std::max(32768u, static_cast<uint32_t>(newAudio->sampleRate / 4) * std::max(2u, newAudio->channels));
@@ -513,17 +519,19 @@ void DeckPlayer::processBlock(float* outputBuffer, uint32_t numSamples, uint32_t
     }
 
     // Feed input frames into stretch engine until enough output frames are ready
+    bool sourceExhausted = (currentFrame >= totalFrames);
     uint32_t chunkSize = 512;
-    while (stretchEngine_->numAvailableSamples() < numSamples && currentFrame < totalFrames) {
+    while (!sourceExhausted && stretchEngine_->numAvailableSamples() < numSamples) {
         uint32_t framesToRead = static_cast<uint32_t>(std::min(static_cast<uint64_t>(chunkSize), totalFrames - currentFrame));
         if (framesToRead == 0) break;
 
         const float* srcPtr = &audio->samples[currentFrame * srcChannels];
         stretchEngine_->putSamples(srcPtr, framesToRead);
         currentFrame += framesToRead;
+        sourceExhausted = (currentFrame >= totalFrames);
     }
 
-    if (currentFrame >= totalFrames && stretchEngine_->numAvailableSamples() < numSamples) {
+    if (sourceExhausted && stretchEngine_->numAvailableSamples() < numSamples) {
         stretchEngine_->flush();
     }
 
@@ -588,9 +596,36 @@ void DeckPlayer::processBlock(float* outputBuffer, uint32_t numSamples, uint32_t
     double nextPosSec = static_cast<double>(currentFrame) / audio->sampleRate;
     playbackPosition_.store(nextPosSec, std::memory_order_release);
 
-    if (currentFrame >= totalFrames && stretchEngine_->numAvailableSamples() == 0 && received < numSamples) {
-        isPlaying_.store(false, std::memory_order_release);
-        playbackState_.store(DeckPlaybackState::Ready, std::memory_order_release);
+    // Auto-end detection for the stretched path. The WSOLA synth keeps emitting
+    // a silent tail after the source runs out, so queue occupancy never reaches
+    // zero and `received` stays full; instead we stop once the engine has
+    // emitted the stretched remainder (source frames / tempo ratio, counted
+    // since the engine was last cleared).
+    uint64_t emitted = stretchEngine_->getOutputFrames();
+    if (emitted < lastStretchOutput_) {
+        // Engine was cleared mid-playback (seek / DSP reset): re-base the
+        // expected total on the current playback position.
+        stretchOutputBase_ = currentFrame;
+    }
+    lastStretchOutput_ = emitted;
+
+    if (sourceExhausted) {
+        uint64_t base = stretchOutputBase_;
+        if (base > totalFrames) {
+            base = totalFrames;
+        }
+        // At tempo ratio R the engine emits ~ (frames / R) output frames, so
+        // the stretched remainder ends at (remaining / R).
+        double ratio = std::clamp(stretchEngine_->getTempoRatio(), 0.25, 4.0);
+        uint64_t expectedOut =
+            static_cast<uint64_t>(static_cast<double>(totalFrames - base) / ratio);
+        // Block (512) + window quantization means the counter lands within a
+        // few hundred frames of the exact end; a small margin absorbs that.
+        constexpr uint64_t kStretchEndMargin = 2048;
+        if (emitted + kStretchEndMargin >= expectedOut) {
+            isPlaying_.store(false, std::memory_order_release);
+            playbackState_.store(DeckPlaybackState::Ready, std::memory_order_release);
+        }
     }
 }
 
