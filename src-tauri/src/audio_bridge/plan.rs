@@ -111,7 +111,9 @@ impl TransitionPlan {
 
     /// Structural validity: deck ids in [0, 1] and source != destination.
     pub fn is_valid_structure(&self) -> bool {
-        self.source_deck <= 1 && self.destination_deck <= 1 && self.source_deck != self.destination_deck
+        self.source_deck <= 1
+            && self.destination_deck <= 1
+            && self.source_deck != self.destination_deck
     }
 
     /// Sanitized copy: non-finite -> safe default, bounds clamp, monotonic phases.
@@ -209,28 +211,28 @@ mod tests {
     fn nan_plan() -> TransitionPlan {
         #[allow(clippy::field_reassign_with_default)]
         {
-        let mut p = TransitionPlan::default();
-        p.duration_seconds = f64::NAN;
-        p.src_tempo_ratio = f32::INFINITY;
-        p.dst_tempo_ratio = -f32::INFINITY;
-        p.dst_tempo_ramp_seconds = f32::NAN;
-        p.src_gain = 2.0;
-        p.dst_gain = -3.0;
-        p.src_eq = [f32::NAN, 5.0, -5.0];
-        p.dst_eq = [1.5, -1.5, f32::INFINITY];
-        p.src_filter = f32::NAN;
-        p.dst_filter = 4.0;
-        p.src_vocal_stem = -1.0;
-        p.dst_vocal_stem = 9.0;
-        p.crossfader_start = 8.0;
-        p.crossfader_end = -8.0;
-        p.phase_sync_end = 0.9;
-        p.phase_eq_end = 0.3;
-        p.phase_vocal_end = 0.2;
-        p.bass_swap_point = 1.5;
-        p.bass_swap_window = 0.001;
-        p.confidence = f32::NAN;
-        p
+            let mut p = TransitionPlan::default();
+            p.duration_seconds = f64::NAN;
+            p.src_tempo_ratio = f32::INFINITY;
+            p.dst_tempo_ratio = -f32::INFINITY;
+            p.dst_tempo_ramp_seconds = f32::NAN;
+            p.src_gain = 2.0;
+            p.dst_gain = -3.0;
+            p.src_eq = [f32::NAN, 5.0, -5.0];
+            p.dst_eq = [1.5, -1.5, f32::INFINITY];
+            p.src_filter = f32::NAN;
+            p.dst_filter = 4.0;
+            p.src_vocal_stem = -1.0;
+            p.dst_vocal_stem = 9.0;
+            p.crossfader_start = 8.0;
+            p.crossfader_end = -8.0;
+            p.phase_sync_end = 0.9;
+            p.phase_eq_end = 0.3;
+            p.phase_vocal_end = 0.2;
+            p.bass_swap_point = 1.5;
+            p.bass_swap_window = 0.001;
+            p.confidence = f32::NAN;
+            p
         }
     }
 
@@ -251,7 +253,7 @@ mod tests {
         assert_eq!(p.dst_vocal_stem, 1.0);
         assert_eq!(p.crossfader_start, 1.0); // 8.0 clamps to upper bound
         assert_eq!(p.crossfader_end, -1.0); // -8.0 clamps to lower bound
-        // Monotonic phase cascade: 0.9 / 0.9 / 0.9.
+                                            // Monotonic phase cascade: 0.9 / 0.9 / 0.9.
         assert_eq!(p.phase_sync_end, 0.9);
         assert_eq!(p.phase_eq_end, 0.9);
         assert_eq!(p.phase_vocal_end, 0.9);
