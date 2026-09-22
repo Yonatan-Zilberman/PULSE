@@ -117,6 +117,47 @@ double pulse_audio_get_deck_position(uint8_t deck_id);
 double pulse_audio_get_deck_duration(uint8_t deck_id);
 int pulse_audio_execute_transition(TransitionCommandC command);
 
+// Engine -> Application Event Contract (versioned, append-only)
+//
+// The engine pushes lifecycle/playback/error events into an internal fixed
+// 512-slot lock-free queue; the application layer (Rust) pulls them with
+// pulse_audio_drain_events. When the queue overflows, events are dropped
+// (bounded) and the cumulative drop count is reported via out_dropped.
+typedef enum {
+    PULSE_EVT_ENGINE_STARTED = 1,
+    PULSE_EVT_ENGINE_STOPPED = 2,
+    PULSE_EVT_ENGINE_SHUTDOWN = 3,
+    PULSE_EVT_UNDERRUN = 4,
+    PULSE_EVT_TRACK_LOADED = 5,
+    PULSE_EVT_TRACK_LOAD_FAILED = 6,
+    PULSE_EVT_DECK_STATE_CHANGED = 7,
+    PULSE_EVT_TRACK_ENDED = 8,
+    PULSE_EVT_TRANSITION_STARTED = 9,
+    PULSE_EVT_TRANSITION_COMPLETED = 10,
+    PULSE_EVT_TRANSITION_REJECTED = 11
+} AudioEventKindC;
+
+// AudioEventC — 32 bytes, 8-byte aligned, append-only.
+// Offsets: version@0, kind@4, deck_id@8, code@16, detail@24.
+typedef struct {
+    uint32_t version;      // @0 — must be 1
+    uint32_t kind;         // @4 — AudioEventKindC
+    uint8_t deck_id;       // @8 — 0|1; 255 = engine/transition-wide
+    uint8_t _pad0[7];      // @9-15 (alignment for detail)
+    int32_t code;          // @16-19 — semantics per kind (see Docs/Audio-Bridge-Contract.md)
+    uint32_t _pad1;        // @20-23
+    double detail;         // @24-31 — seconds (position/duration) or unused
+} AudioEventC;
+
+/**
+ * Drain engine events into a caller-allocated buffer.
+ * @param out Caller buffer (must be non-null when max_events > 0).
+ * @param max_events Buffer capacity in events.
+ * @param out_dropped Optional out-param receiving the cumulative dropped-event count.
+ * @return Number of events copied (0..max_events). null/0 is a no-op returning 0.
+ */
+int pulse_audio_drain_events(AudioEventC* out, uint32_t max_events, uint32_t* out_dropped);
+
 #ifdef __cplusplus
 }
 
@@ -129,5 +170,12 @@ static_assert(offsetof(TransitionCommandC, version) == 0, "TransitionCommandC v2
 static_assert(offsetof(TransitionCommandC, duration_seconds) == 16, "TransitionCommandC v2: duration_seconds at offset 16");
 static_assert(offsetof(TransitionCommandC, transition_type) == 112, "TransitionCommandC v2: transition_type at offset 112");
 static_assert(std::is_standard_layout<AudioEngineStatsC>::value, "AudioEngineStatsC must be standard layout");
+static_assert(std::is_standard_layout<AudioEventC>::value, "AudioEventC must be standard layout");
+static_assert(sizeof(AudioEventC) == 32, "AudioEventC layout must be 32 bytes");
+static_assert(offsetof(AudioEventC, version) == 0, "AudioEventC: version at offset 0");
+static_assert(offsetof(AudioEventC, kind) == 4, "AudioEventC: kind at offset 4");
+static_assert(offsetof(AudioEventC, deck_id) == 8, "AudioEventC: deck_id at offset 8");
+static_assert(offsetof(AudioEventC, code) == 16, "AudioEventC: code at offset 16");
+static_assert(offsetof(AudioEventC, detail) == 24, "AudioEventC: detail at offset 24");
 
 #endif

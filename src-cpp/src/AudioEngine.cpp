@@ -194,7 +194,17 @@ int AudioEngine::initialize(const AudioEngineConfigC& config) {
     if (isRunning_.load(std::memory_order_acquire)) {
         stop();
     }
-    teardownCoreAudioHardware();
+
+    // Keep an identical-config re-init cheap: reusing the live AudioUnit avoids
+    // the CoreAudio create/dispose churn that can leave the render thread dead
+    // within a process (observed with repeated init cycles in the app/tests).
+    const bool sameConfig = (config_.sample_rate == config.sample_rate) &&
+                            (config_.buffer_size == config.buffer_size) &&
+                            (config_.channel_count == config.channel_count);
+    const bool keepHardware = sameConfig && hardwareDeviceActive_ && (audioUnit_ != nullptr);
+    if (!keepHardware) {
+        teardownCoreAudioHardware();
+    }
 
     config_ = config;
 
@@ -213,7 +223,9 @@ int AudioEngine::initialize(const AudioEngineConfigC& config) {
     underrunCount_.store(0, std::memory_order_relaxed);
     cpuLoad_.store(0.0f, std::memory_order_relaxed);
 
-    setupCoreAudioHardware();
+    if (!keepHardware) {
+        setupCoreAudioHardware();
+    }
 
     isInitialized_.store(true, std::memory_order_release);
     return 0;
@@ -239,6 +251,7 @@ int AudioEngine::start() {
 #endif
 
     isRunning_.store(true, std::memory_order_release);
+    emitEvent(PULSE_EVT_ENGINE_STARTED, kEngineWideDeckId, 0, 0.0);
     return 0;
 }
 
@@ -260,15 +273,17 @@ int AudioEngine::stop() {
     if (deckA_) deckA_->resetEq();
     if (deckB_) deckB_->resetEq();
 
+    emitEvent(PULSE_EVT_ENGINE_STOPPED, kEngineWideDeckId, 0, 0.0);
     return 0;
 }
 
 int AudioEngine::shutdown() {
     if (isRunning_.load(std::memory_order_acquire)) {
-        stop();
+        stop();  // emits PULSE_EVT_ENGINE_STOPPED
     }
     teardownCoreAudioHardware();
     isInitialized_.store(false, std::memory_order_release);
+    emitEvent(PULSE_EVT_ENGINE_SHUTDOWN, kEngineWideDeckId, 0, 0.0);
     return 0;
 }
 
@@ -287,69 +302,165 @@ AudioEngineStatsC AudioEngine::getStats() const noexcept {
     return stats;
 }
 
-bool AudioEngine::loadTrack(uint8_t deckId, const std::string& filePath) {
-    if (deckId == 0 && deckA_) {
-        return deckA_->loadFile(filePath);
-    } else if (deckId == 1 && deckB_) {
-        return deckB_->loadFile(filePath);
+void AudioEngine::emitEvent(uint32_t kind, uint8_t deckId, int32_t code, double detail) noexcept {
+    AudioEventC event{};
+    event.version = 1;
+    event.kind = kind;
+    event.deck_id = deckId;
+    event.code = code;
+    event.detail = detail;
+    events_.push(event);
+}
+
+uint32_t AudioEngine::drainEvents(AudioEventC* out, uint32_t max, uint32_t* outDropped) noexcept {
+    if (out == nullptr || max == 0) {
+        return 0;
     }
-    return false;
+    const uint32_t drained = events_.drain(out, max);
+    if (outDropped != nullptr) {
+        *outDropped = events_.dropped();
+    }
+    return drained;
+}
+
+void AudioEngine::recordUnderrun() noexcept {
+    underrunCount_.fetch_add(1, std::memory_order_relaxed);
+    emitEvent(PULSE_EVT_UNDERRUN, kEngineWideDeckId, 0, 0.0);
+}
+
+void AudioEngine::takeRtSample(RtEventSample& sample) const noexcept {
+    sample.transitionActive = transitionExecutor_ ? transitionExecutor_->isTransitionActive() : false;
+    for (uint32_t i = 0; i < 2; ++i) {
+        const DeckPlayer* deck = (i == 0) ? deckA_.get() : deckB_.get();
+        if (deck) {
+            sample.deckState[i] = static_cast<uint8_t>(deck->getPlaybackState());
+            sample.deckPosition[i] = deck->getPlaybackPosition();
+            sample.deckDuration[i] = deck->getDuration();
+        } else {
+            sample.deckState[i] = static_cast<uint8_t>(DeckPlaybackState::Empty);
+            sample.deckPosition[i] = 0.0;
+            sample.deckDuration[i] = 0.0;
+        }
+    }
+}
+
+void AudioEngine::emitRtEventEdges(const RtEventSample& before, const RtEventSample& after) noexcept {
+    if (!before.transitionActive && after.transitionActive) {
+        emitEvent(PULSE_EVT_TRANSITION_STARTED, kEngineWideDeckId, 0, 0.0);
+    } else if (before.transitionActive && !after.transitionActive) {
+        emitEvent(PULSE_EVT_TRANSITION_COMPLETED, kEngineWideDeckId, 0, 0.0);
+    }
+
+    for (uint32_t i = 0; i < 2; ++i) {
+        const bool wasPlaying = (before.deckState[i] == static_cast<uint8_t>(DeckPlaybackState::Playing));
+        const bool nowStopped = (after.deckState[i] == static_cast<uint8_t>(DeckPlaybackState::Ready) ||
+                                 after.deckState[i] == static_cast<uint8_t>(DeckPlaybackState::Paused));
+        const bool reachedEnd = (after.deckDuration[i] > 0.0) &&
+                                (after.deckPosition[i] >= after.deckDuration[i] - 1e-3);
+        if (wasPlaying && nowStopped && reachedEnd) {
+            emitEvent(PULSE_EVT_TRACK_ENDED, static_cast<uint8_t>(i), 0, after.deckPosition[i]);
+        }
+    }
+}
+
+bool AudioEngine::loadTrack(uint8_t deckId, const std::string& filePath) {
+    if (deckId > 1) {
+        return false;  // Invalid deck id: no event.
+    }
+    DeckPlayer* deck = (deckId == 0) ? deckA_.get() : deckB_.get();
+    if (!deck) {
+        return false;
+    }
+    const bool ok = deck->loadFile(filePath);
+    if (ok) {
+        emitEvent(PULSE_EVT_TRACK_LOADED, deckId, 0, getDeckState(deckId).duration_seconds);
+    } else {
+        emitEvent(PULSE_EVT_TRACK_LOAD_FAILED, deckId, -1, 0.0);
+    }
+    return ok;
 }
 
 bool AudioEngine::prepareDeck(uint8_t deckId, const std::string& filePath, double cueSeconds, double tempoRatio, bool preservePitch) {
-    if (deckId == 0 && deckA_) {
-        return deckA_->prepareTrack(filePath, cueSeconds, tempoRatio, preservePitch);
-    } else if (deckId == 1 && deckB_) {
-        return deckB_->prepareTrack(filePath, cueSeconds, tempoRatio, preservePitch);
+    if (deckId > 1) {
+        return false;  // Invalid deck id: no event.
     }
-    return false;
+    DeckPlayer* deck = (deckId == 0) ? deckA_.get() : deckB_.get();
+    if (!deck) {
+        return false;
+    }
+    const bool ok = deck->prepareTrack(filePath, cueSeconds, tempoRatio, preservePitch);
+    if (ok) {
+        emitEvent(PULSE_EVT_TRACK_LOADED, deckId, 0, getDeckState(deckId).duration_seconds);
+    } else {
+        emitEvent(PULSE_EVT_TRACK_LOAD_FAILED, deckId, -1, 0.0);
+    }
+    return ok;
 }
 
 bool AudioEngine::playDeck(uint8_t deckId) {
-    if (deckId == 0 && deckA_) {
-        return deckA_->play();
-    } else if (deckId == 1 && deckB_) {
-        return deckB_->play();
+    DeckPlayer* deck = getDeck(deckId);
+    if (!deck) {
+        return false;
     }
-    return false;
+    const uint8_t before = static_cast<uint8_t>(deck->getPlaybackState());
+    const bool ok = deck->play();
+    const uint8_t after = static_cast<uint8_t>(deck->getPlaybackState());
+    if (before != after) {
+        emitEvent(PULSE_EVT_DECK_STATE_CHANGED, deckId, static_cast<int32_t>(after), deck->getPlaybackPosition());
+    }
+    return ok;
 }
 
 bool AudioEngine::pauseDeck(uint8_t deckId) {
-    if (deckId == 0 && deckA_) {
-        return deckA_->pause();
-    } else if (deckId == 1 && deckB_) {
-        return deckB_->pause();
+    DeckPlayer* deck = getDeck(deckId);
+    if (!deck) {
+        return false;
     }
-    return false;
+    const uint8_t before = static_cast<uint8_t>(deck->getPlaybackState());
+    const bool ok = deck->pause();
+    const uint8_t after = static_cast<uint8_t>(deck->getPlaybackState());
+    if (before != after) {
+        emitEvent(PULSE_EVT_DECK_STATE_CHANGED, deckId, static_cast<int32_t>(after), deck->getPlaybackPosition());
+    }
+    return ok;
 }
 
 bool AudioEngine::stopDeck(uint8_t deckId) {
-    if (deckId == 0 && deckA_) {
-        return deckA_->stop();
-    } else if (deckId == 1 && deckB_) {
-        return deckB_->stop();
+    DeckPlayer* deck = getDeck(deckId);
+    if (!deck) {
+        return false;
     }
-    return false;
+    const uint8_t before = static_cast<uint8_t>(deck->getPlaybackState());
+    const bool ok = deck->stop();
+    const uint8_t after = static_cast<uint8_t>(deck->getPlaybackState());
+    if (before != after) {
+        emitEvent(PULSE_EVT_DECK_STATE_CHANGED, deckId, static_cast<int32_t>(after), deck->getPlaybackPosition());
+    }
+    return ok;
 }
 
 bool AudioEngine::seekDeck(uint8_t deckId, double seconds) {
-    if (deckId == 0 && deckA_) {
-        deckA_->seek(seconds);
-        return true;
-    } else if (deckId == 1 && deckB_) {
-        deckB_->seek(seconds);
-        return true;
+    DeckPlayer* deck = getDeck(deckId);
+    if (!deck) {
+        return false;
     }
-    return false;
+    // Seek does not change the state enum: no DeckStateChanged event.
+    deck->seek(seconds);
+    return true;
 }
 
 bool AudioEngine::setPlaying(uint8_t deckId, bool isPlaying) {
-    if (deckId == 0 && deckA_) {
-        return isPlaying ? deckA_->play() : deckA_->pause();
-    } else if (deckId == 1 && deckB_) {
-        return isPlaying ? deckB_->play() : deckB_->pause();
+    DeckPlayer* deck = getDeck(deckId);
+    if (!deck) {
+        return false;
     }
-    return false;
+    const uint8_t before = static_cast<uint8_t>(deck->getPlaybackState());
+    const bool ok = (isPlaying ? deck->play() : deck->pause());
+    const uint8_t after = static_cast<uint8_t>(deck->getPlaybackState());
+    if (before != after) {
+        emitEvent(PULSE_EVT_DECK_STATE_CHANGED, deckId, static_cast<int32_t>(after), deck->getPlaybackPosition());
+    }
+    return ok;
 }
 
 bool AudioEngine::setDeckVolume(uint8_t deckId, float volume) {
@@ -489,10 +600,14 @@ double AudioEngine::getDeckDuration(uint8_t deckId) const noexcept {
 }
 
 int AudioEngine::executeTransition(const TransitionCommandC& command) {
-    if (transitionExecutor_) {
-        return transitionExecutor_->startTransition(command);
+    if (!transitionExecutor_) {
+        return -1;
     }
-    return -1;
+    const int result = transitionExecutor_->startTransition(command);
+    if (result != 0) {
+        emitEvent(PULSE_EVT_TRANSITION_REJECTED, kEngineWideDeckId, -1, 0.0);
+    }
+    return result;
 }
 
 void AudioEngine::audioDeviceAboutToStart(juce::AudioIODevice* /*device*/) {
@@ -535,6 +650,10 @@ void AudioEngine::audioDeviceIOCallbackWithContext(
         return;
     }
 
+    // Event edge-detection sample (before): no DSP effect.
+    RtEventSample sampleBefore;
+    takeRtSample(sampleBefore);
+
     // Transition automation (real-time): consumes pending full-plan handoff, advances the
     // transition clock for the block about to be rendered, applies the active strategy.
     if (transitionExecutor_ && mixer_) {
@@ -544,6 +663,11 @@ void AudioEngine::audioDeviceIOCallbackWithContext(
     // Process Deck A & B
     deckA_->processBlock(deckABuffer_.data(), samples, 2);
     deckB_->processBlock(deckBBuffer_.data(), samples, 2);
+
+    // Event edge-detection sample (after): emits TransitionStarted/Completed, TrackEnded.
+    RtEventSample sampleAfter;
+    takeRtSample(sampleAfter);
+    emitRtEventEdges(sampleBefore, sampleAfter);
 
     // Sum via mixer into master interleaved buffer
     mixer_->mix(deckABuffer_.data(), deckBBuffer_.data(), masterInterleavedScratch_.data(), samples, 2);
@@ -585,6 +709,10 @@ void AudioEngine::processAudioBlock(float* outMasterBuffer, uint32_t numSamples,
         return;
     }
 
+    // Event edge-detection sample (before): no DSP effect.
+    RtEventSample sampleBefore;
+    takeRtSample(sampleBefore);
+
     // Transition automation (real-time): runs before deck processing so the block being
     // rendered already sees the automated parameters (deterministic block-granular clock).
     if (transitionExecutor_ && mixer_) {
@@ -593,6 +721,11 @@ void AudioEngine::processAudioBlock(float* outMasterBuffer, uint32_t numSamples,
 
     deckA_->processBlock(deckABuffer_.data(), numSamples, numChannels);
     deckB_->processBlock(deckBBuffer_.data(), numSamples, numChannels);
+
+    // Event edge-detection sample (after): emits TransitionStarted/Completed, TrackEnded.
+    RtEventSample sampleAfter;
+    takeRtSample(sampleAfter);
+    emitRtEventEdges(sampleBefore, sampleAfter);
 
     mixer_->mix(deckABuffer_.data(), deckBBuffer_.data(), outMasterBuffer, numSamples, numChannels);
 

@@ -129,5 +129,10 @@ int pulse_audio_execute_transition(TransitionCommandC command) {
     return pulse::audio::AudioEngine::getInstance().executeTransition(command);
 }
 
+int pulse_audio_drain_events(AudioEventC* out, uint32_t max_events, uint32_t* out_dropped) {
+    if (!out || max_events == 0) return 0;
+    return static_cast<int>(pulse::audio::AudioEngine::getInstance().drainEvents(out, max_events, out_dropped));
+}
+
 }
 

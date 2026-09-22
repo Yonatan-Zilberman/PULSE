@@ -2,6 +2,7 @@
 
 #include "AudioBridgeTypes.h"
 #include "DeckPlayer.h"
+#include "EventQueue.h"
 #include "Mixer.h"
 #include "TransitionExecutor.h"
 #include "TempoStrategy.h"
@@ -47,6 +48,9 @@ namespace pulse::audio {
  * - Zero dynamic heap memory allocations (new/malloc).
  * - Zero blocking synchronization primitives (mutex/condition_variable).
  * - Zero system I/O (file, network, console logging).
+ * - emitEvent() is real-time safe: it builds an event on the stack and pushes it into
+ *   a fixed 512-slot lock-free ring (bounded CAS, drop-on-full). The stack is allowed
+ *   on the real-time thread; the ring is preallocated at construction.
  */
 class AudioEngine : public juce::AudioIODeviceCallback {
 public:
@@ -106,6 +110,27 @@ public:
     double getDeckDuration(uint8_t deckId) const noexcept;
     int executeTransition(const TransitionCommandC& command);
 
+    // Engine -> Application Event Delivery
+    // Deck id 255 = engine/transition-wide (not attached to a single deck).
+    static constexpr uint8_t kEngineWideDeckId = 255;
+
+    /**
+     * Emit one event into the internal lock-free queue (real-time safe; may drop
+     * on overflow — see EventQueue). Safe from both the control plane and the
+     * real-time thread.
+     */
+    void emitEvent(uint32_t kind, uint8_t deckId, int32_t code, double detail) noexcept;
+
+    /**
+     * Drain up to `max` events into a caller-allocated buffer (single consumer =
+     * application layer). `outDropped` (nullable) receives the cumulative
+     * dropped-event count.
+     * @return Number of events copied (0..max).
+     */
+    uint32_t drainEvents(AudioEventC* out, uint32_t max, uint32_t* outDropped) noexcept;
+
+    uint32_t droppedEvents() const noexcept { return events_.dropped(); }
+
     // AudioIODeviceCallback Implementation (Real-Time thread)
     void audioDeviceIOCallbackWithContext(const float* const* inputChannelData,
                                          int numInputChannels,
@@ -119,8 +144,8 @@ public:
     // Offline / Testing Callback Path (Deterministic Real-Time DSP)
     void processAudioBlock(float* outMasterBuffer, uint32_t numSamples, uint32_t numChannels) noexcept;
 
-    // Diagnostics / Underrun telemetry
-    void recordUnderrun() noexcept { underrunCount_.fetch_add(1, std::memory_order_relaxed); }
+    // Diagnostics / Underrun telemetry (emits PULSE_EVT_UNDERRUN)
+    void recordUnderrun() noexcept;
 
 private:
     AudioEngine();
@@ -134,6 +159,17 @@ private:
     int setupCoreAudioHardware();
     void teardownCoreAudioHardware() noexcept;
 
+    // Real-time event edge-detection (sampled around existing DSP calls only —
+    // no change to DSP ordering). No allocation: fixed-size value structs.
+    struct RtEventSample {
+        bool transitionActive{false};
+        uint8_t deckState[2]{0, 0};
+        double deckPosition[2]{0.0, 0.0};
+        double deckDuration[2]{0.0, 0.0};
+    };
+    void takeRtSample(RtEventSample& sample) const noexcept;
+    void emitRtEventEdges(const RtEventSample& before, const RtEventSample& after) noexcept;
+
     std::atomic<bool> isInitialized_{false};
     std::atomic<bool> isRunning_{false};
     AudioEngineConfigC config_{48000, 512, 2};
@@ -142,6 +178,10 @@ private:
     std::unique_ptr<DeckPlayer> deckB_;
     std::unique_ptr<Mixer> mixer_;
     std::unique_ptr<TransitionExecutor> transitionExecutor_;
+
+    // Fixed-capacity lock-free event queue (preallocated; drop-on-full).
+    EventQueue events_;
+
 
     // Pre-allocated scratch buffers for real-time safe mixing
     std::vector<float> deckABuffer_;
