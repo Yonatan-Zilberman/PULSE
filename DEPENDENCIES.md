@@ -65,7 +65,7 @@ PULSE is an autonomous, local-first DJ application engineered to execute seamles
 | **9. Build & Tooling** | `@types/react` | `^18.3.12` | `MIT` | npm DevDependency | `None (Build-time only)` | $0. React ambient type definitions. |
 | **9. Build & Tooling** | `@types/react-dom` | `^18.3.1` | `MIT` | npm DevDependency | `None (Build-time only)` | $0. React DOM ambient type definitions. |
 | **9. Build & Tooling** | `prettier` | `^3.4.2` | `MIT` | npm DevDependency | `None (Build-time only)` | $0. Code formatting engine. |
-| **9. Build & Tooling** | Apple Clang (`clang++`) & CMake | `Apple Clang 15+` / `CMake 3.20+` | `Apple-SDK` / `BSD-3-Clause` | Native Host Toolchain | `None (Build-time only)` | $0. Host compilation system for C++ audio engine. |
+| **9. Build & Tooling** | Apple Clang (`clang++`) & CMake | `Apple Clang 15+` / `CMake 3.20+` | `Apple-SDK` / `BSD-3-Clause` | Native Host Toolchain | `None (Build-time only)` | $0. Host compilation system for C++ audio engine. CMake is also invoked from `src-tauri/build.rs` to build `libpulse_audio_engine.a` for Rust linkage (build-time only, no new runtime dependency). |
 
 ---
 

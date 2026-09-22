@@ -63,6 +63,11 @@ jobs:
         with:
           components: clippy, rustfmt
 
+      - name: Setup CMake
+        uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmake-version: '3.28.x'
+
       - name: Rust formatting check
         run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
 
