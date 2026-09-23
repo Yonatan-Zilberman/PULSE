@@ -347,6 +347,20 @@ if(APPLE)
 endif()
 add_test(NAME DspComparatorSelfTest COMMAND pulse_dsp_comparator --run-self-test)
 
+# Golden-Set Regression Harness (float32 reference WAVs under tests/golden-set/references)
+add_executable(test_golden_regression tests/test_golden_regression.cpp)
+target_link_libraries(test_golden_regression PRIVATE pulse_audio_engine)
+if(APPLE)
+    target_link_libraries(test_golden_regression PRIVATE
+        "-framework CoreAudio"
+        "-framework AudioToolbox"
+        "-framework Accelerate"
+        "-framework CoreFoundation"
+    )
+endif()
+add_test(NAME GoldenRegressionTest COMMAND test_golden_regression)
+
+
 
 
 

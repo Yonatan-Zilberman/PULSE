@@ -27,6 +27,23 @@ public:
                            uint32_t channels = 2);
 
     /**
+     * @brief Writes interleaved 32-bit float PCM WAV (audio format 3, IEEE float).
+     *        Values are clamped to [-1.0, 1.0]. Bit-exact round-trip through
+     *        AudioDecoder/ExtAudioFile (verified by golden-regression probe).
+     * @param filePath Destination file path.
+     * @param samples Interleaved float samples.
+     * @param numFrames Total frame count.
+     * @param sampleRate Audio sample rate (e.g. 48000 Hz).
+     * @param channels Channel count (e.g. 2 for stereo).
+     * @return true on success, false on I/O error.
+     */
+    static bool writeWav32(const std::string& filePath,
+                           const float* samples,
+                           uint64_t numFrames,
+                           uint32_t sampleRate = 48000,
+                           uint32_t channels = 2);
+
+    /**
      * @brief Generates a synthetic deterministic stereo WAV fixture.
      * @param filePath Destination path.
      * @param frequencyHz Base tone frequency (e.g. 440.0 Hz).

@@ -67,3 +67,5 @@ tests/audio/transitions/
 !tests/audio/.gitkeep
 tests/golden-set/*
 !tests/golden-set/.gitkeep
+# Committed golden-regression reference renders (float32 WAV) — see test_golden_regression
+!tests/golden-set/references/

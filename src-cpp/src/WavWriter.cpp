@@ -33,12 +33,19 @@ bool WavWriter::writeWav16(const std::string& filePath,
         return false;
     }
 
+    // RIFF size fields are 32-bit: reject inputs that would silently truncate
+    // (chunkSize = 36 + dataBytes must also fit).
+    const uint64_t dataBytes64 = numFrames * channels * sizeof(int16_t);
+    if (dataBytes64 > UINT32_MAX - 36) {
+        return false;
+    }
+
     std::ofstream file(filePath, std::ios::binary);
     if (!file.is_open()) {
         return false;
     }
 
-    uint32_t dataBytes = static_cast<uint32_t>(numFrames * channels * sizeof(int16_t));
+    uint32_t dataBytes = static_cast<uint32_t>(dataBytes64);
     WavHeader header;
     header.chunkSize = 36 + dataBytes;
     header.numChannels = static_cast<uint16_t>(channels);
@@ -61,6 +68,62 @@ bool WavWriter::writeWav16(const std::string& filePath,
     }
 
     file.write(reinterpret_cast<const char*>(pcmBuffer.data()), dataBytes);
+    file.flush();
+    if (!file.good()) {
+        return false; // partial write (e.g. disk full) must not be reported as success
+    }
+    file.close();
+    return true;
+}
+
+bool WavWriter::writeWav32(const std::string& filePath,
+                           const float* samples,
+                           uint64_t numFrames,
+                           uint32_t sampleRate,
+                           uint32_t channels) {
+    if (!samples || numFrames == 0 || sampleRate == 0 || channels == 0) {
+        return false;
+    }
+
+    // RIFF size fields are 32-bit: reject inputs that would silently truncate
+    // past ~4 GiB (e.g. a 12 h float32 stereo render is 16.6 GiB).
+    // chunkSize = 36 + dataBytes must also fit in uint32_t.
+    const uint64_t dataBytes64 = numFrames * channels * sizeof(float);
+    if (dataBytes64 > UINT32_MAX - 36) {
+        return false;
+    }
+
+    std::ofstream file(filePath, std::ios::binary);
+    if (!file.is_open()) {
+        return false;
+    }
+
+    uint32_t dataBytes = static_cast<uint32_t>(dataBytes64);
+    WavHeader header;
+    header.chunkSize = 36 + dataBytes;
+    header.audioFormat = 3; // IEEE float
+    header.numChannels = static_cast<uint16_t>(channels);
+    header.sampleRate = sampleRate;
+    header.byteRate = sampleRate * channels * 4;
+    header.blockAlign = static_cast<uint16_t>(channels * 4);
+    header.bitsPerSample = 32;
+    header.subchunk2Size = dataBytes;
+
+    file.write(reinterpret_cast<const char*>(&header), sizeof(header));
+
+    // Clamp and copy interleaved float samples directly.
+    size_t totalSamples = numFrames * channels;
+    std::vector<float> pcmBuffer(totalSamples);
+
+    for (size_t i = 0; i < totalSamples; ++i) {
+        pcmBuffer[i] = std::clamp(samples[i], -1.0f, 1.0f);
+    }
+
+    file.write(reinterpret_cast<const char*>(pcmBuffer.data()), dataBytes);
+    file.flush();
+    if (!file.good()) {
+        return false; // partial write (e.g. disk full) must not be reported as success
+    }
     file.close();
     return true;
 }
