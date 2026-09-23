@@ -54,7 +54,7 @@
 - **Pitch-Preserving Time-Stretching:** `TimeStretchEngine.cpp` implementing real-time safe, pitch-invariant WSOLA time-stretching (0.0 semitone pitch shift) with SoundTouch dynamic linkage isolation.
 - **Golden Fixture Corpus (25 Tracks):** `generate_fixtures.cpp` generating 25 distinct golden tracks (`golden_track_01.wav` .. `golden_track_25.wav`) in `tests/golden-set/` spanning 118–130 BPM, diverse Camelot keys, 8-bar musical phrase pulses, and $60\text{ Hz}$ sub-bass foundations.
 - **Production Transition Executor:** `TransitionExecutor.cpp` executing a fully precomputed, versioned (v2) `TransitionCommandC` plan over the C ABI — parameter sanitization (non-finite → safe defaults, bounds clamp, monotonic phases, structural rejection), the Tech Design §9.1 **Classic EQ Blend** reference transition (silent sync → fader + bass handoff + gain staging → vocal stem handoff → cut + tempo return ramp), seqlock lock-free handoff driven from the engine's real-time block paths, and baseline restore on completion.
-- **Test Suite (22 CTest Targets):**
+- **Test Suite (26 CTest Targets):**
   - `test_audio_bridge` (`AudioBridgeSmokeTest`): C ABI size, alignment, lifecycle, and telemetry tests.
   - `test_audio_decoder` (`AudioDecoderTest`): Steady 120/128 BPM, ambiguous 70/140 BPM, drifting tempo, syncopated rhythm with silence intro, and corrupt/empty file error tests.
   - `test_mixer_dsp` (`MixerDSPTest`): Equal-power crossfader, volume scaling, and peak limiter tests.
@@ -75,6 +75,31 @@
   - `test_production_dsp` (`ProductionDspTest`): Objective real-time DSP tests for the production signal chain — unity bypass, gain bounds, parameter smoothing (no zipper noise), stem-mixer fallback, safe master soft-limiter clipping prevention ($\le 0.999$), and dynamic tempo-adjustment duration scaling.
   - `test_engine_tempo_match` (`EngineTempoMatchTest`): Engine-level tempo matching via `AudioEngine::matchTempo` — Source match ratios (120/125 BPM $\to$ 0.96), octave match (120/60 BPM $\to$ ratio 1.0/1.0), >6% stretch rejection flag, and RT-path tempo scaling through `processAudioBlock` with no master clipping.
   - `test_coreaudio_live` (`CoreAudioLiveTest`): Live hardware callback verification streaming audio to default macOS CoreAudio output with frame progress and zero underruns.
+  - `pulse_dsp_comparator` (`DspComparatorSelfTest`): Built-in render-comparison self-test for the DSP regression tool (SNR / peak / clipping metrics against a synthetic reference pair).
+  - `test_stress_dsp` (`StressDspTest`): Offline DSP stress matrix — see Three-Tier Audio Quality Harness below.
+  - `test_golden_regression` (`GoldenRegressionTest`): Golden-set regression against 5 committed float32 reference renders — see below.
+  - `test_soak` (`SoakShortTest`): Continuous 25-track ping-pong soak, 5-minute CI tier — see below.
+
+### Three-Tier Audio Quality Harness (Stress / Golden Regression / Soak)
+
+Three new CTest-registered, fully deterministic, offline harnesses (no CoreAudio render thread, no `start()`, no hardware) per the PRD reliability gate (12-hour soak, zero dropouts):
+
+- **Tier 1 — Stress (`StressDspTest`, `src-cpp/tests/test_stress_dsp.cpp`):** 12-cell matrix of block size ($64/256/512/2048$) $\times$ sample rate ($44.1k/48k/96k$), 5 s of audio per cell, with deterministic LCG-scheduled control-plane churn every 16 blocks (volume/EQ/filter/tempo/seek/play-pause/`executeTransition`/deck-swap reload) and both decks on the pitch-preserving WSOLA path ($1.04\times/0.96\times$). Gating invariants per cell: exact frame accounting, zero underruns, zero event drops, zero heap allocations inside `processAudioBlock` windows (allocation trap), master peak $\le 0.999f$ (engine limiter ceiling). The $\ge10\times$ CPU-headroom bar (mean + p95 block time $\le 10\%$ of block budget) is measured and reported per cell; it is advisory until the engine's per-block fixed cost is optimized (see Follow-up ticket 1 below — the unoptimized CTest build cannot meet it).
+- **Tier 2 — Golden Regression (`GoldenRegressionTest`, `src-cpp/tests/test_golden_regression.cpp`):** Five pinned deterministic scenarios (Classic EQ Blend, SCurve + preset deck EQs, Bass Swap, tempo-matched Bass Swap, 24 s 3-track set) rendered fresh and compared against committed float32 reference WAVs under `tests/golden-set/references/` (5 files, $\approx 22$ MB). Bars per profile: $\mathrm{SNR} \ge 80$ dB, max abs sample delta $\le 5\times10^{-3}$, zero clipped samples, exact frame counts. Regenerate references from a known-good build with `./src-cpp/build/test_golden_regression --generate tests/golden-set/references`; never loosen the thresholds (regenerate on a CI-class toolchain instead if CI drifts).
+- **Tier 3 — Soak (`SoakShortTest`, `src-cpp/tests/test_soak.cpp`):** Continuous 25-track ping-pong reusing the `pulse_cli` loop structure (preload $\to$ render to mix trigger $\to$ `matchTempo` $\to$ alternating Bass Swap / Classic EQ Blend $\to$ fader handoff, stop + reload), rendering offline until simulated audio time reaches `--duration`. CI tier: 5 minutes (`--duration 300`, `TIMEOUT 1800`). PRD 12-hour local tier (local-only, not scheduled in CI):
+
+  ```bash
+  ./src-cpp/build/test_soak --duration 43200 --report tests/audio/soak_12h_report.json
+  ```
+
+  Pass bars (both tiers): zero underruns, zero event drops, exact frame ledger, master peak $\le 0.999f$, zero RT-window allocations, every queue track used $\ge 1\times$ when a full pass fits the duration (short sanity runs require $\ge 5$), both decks advanced, final deck states $\in\{$Ready, Paused, Playing$\}$, zero non-finite (NaN/Inf) output samples. Transitions chain back-to-back by design (zero solo per track) to maximize control-plane churn; steady-state coverage comes from Tiers 1–2. A JSON summary (including `cpu_estimate_pct` and `non_finite_samples`) is written to `--report` on every run.
+
+### Follow-up tickets (quality harness)
+
+Open follow-ups surfaced while landing the harness; the advisory statuses above are temporary until these land:
+
+1. **Engine CPU cost (unblocks the CPU-headroom hard bar, plan Risk F2):** reduce the ~50 µs fixed per-block cost and vectorize the WSOLA stretch path so the 64-block cells meet the 10% mean + p95 bar at `-O2` (measured locally: ~50 µs fixed per-block cost dominates small-block budgets). Until then the bar remains advisory in `test_stress_dsp`.
+2. **Cross-toolchain golden parity:** if the first CI `GoldenRegressionTest` run drifts, regenerate references on a CI-class toolchain — never loosen the 80 dB bar.
 
 ---
 
@@ -97,7 +122,7 @@
 | **Rust Formatting** | `cargo fmt --manifest-path src-tauri/Cargo.toml -- --check` | Rustfmt style adherence |
 | **Rust Linting** | `cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings` | Zero clippy warnings |
 | **Rust Core Unit Tests** | `cargo test --manifest-path src-tauri/Cargo.toml` | 31 unit tests (SetPlanner sequencing over 25 tracks, Camelot harmonic distance, Serde roundtrips, Candidate scoring, SQLite DDL, v2 C-ABI layout, TransitionPlan sanitization) |
-| **C++ Build & CTest Suite** | `cmake -B src-cpp/build -S src-cpp && cmake --build src-cpp/build && ctest --test-dir src-cpp/build --output-on-failure` | 22 CTest suites (including AudioEngineLifecycleTest, RealtimeSafetyTest, TransitionExecutorTest, CoreAudioLiveTest) |
+| **C++ Build & CTest Suite** | `cmake -B src-cpp/build -S src-cpp && cmake --build src-cpp/build && ctest --test-dir src-cpp/build --output-on-failure` | 26 CTest suites (including StressDspTest, GoldenRegressionTest, SoakShortTest, TransitionExecutorTest, CoreAudioLiveTest) |
 | **Live CoreAudio Probe** | `./src-cpp/build/test_coreaudio_live` | Validates real-time audio output callback execution on macOS hardware |
 | **Phase 0 Golden Set Mix (20 Transitions)** | `./src-cpp/build/pulse_cli --track-dir tests/golden-set --min-transitions 20 --transition-strategy bass_swap --phrase-aware --phrase-bars 8 --tempo-strategy source --export-snippets --out tests/audio/phase0_master_set.wav --report tests/audio/phase0_set_report.json` | 20-transition automated continuous set mix, master WAV, 20 snippet WAVs, and JSON report |
 

@@ -69,13 +69,19 @@ cargo test --manifest-path src-tauri/Cargo.toml
 
 #### C++ Audio Engine Build & Test Suite:
 ```bash
-# Configure, build, and run full CTest test suite (17 test suites):
+# Configure, build, and run full CTest test suite (26 test suites):
 cmake -B src-cpp/build -S src-cpp
 cmake --build src-cpp/build
 ctest --test-dir src-cpp/build --output-on-failure
 
 # Run live macOS CoreAudio hardware playback probe:
 ./src-cpp/build/test_coreaudio_live
+
+# Three-tier audio quality harness (all offline, deterministic):
+#   Stress matrix (buffer x sample rate):   ./src-cpp/build/test_stress_dsp
+#   Golden-set regression (5 profiles):     ./src-cpp/build/test_golden_regression
+#   Continuous 25-track soak, 5-min tier:   ./src-cpp/build/test_soak --duration 300 --report soak_report.json
+#   PRD 12-hour local soak (local-only):    ./src-cpp/build/test_soak --duration 43200 --report tests/audio/soak_12h_report.json
 ```
 
 
