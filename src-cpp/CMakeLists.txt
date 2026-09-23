@@ -360,6 +360,33 @@ if(APPLE)
 endif()
 add_test(NAME GoldenRegressionTest COMMAND test_golden_regression)
 
+# Three-Tier Quality Harness: Stress (buffer-size x sample-rate matrix, offline)
+add_executable(test_stress_dsp tests/test_stress_dsp.cpp)
+target_link_libraries(test_stress_dsp PRIVATE pulse_audio_engine)
+if(APPLE)
+    target_link_libraries(test_stress_dsp PRIVATE
+        "-framework CoreAudio"
+        "-framework AudioToolbox"
+        "-framework Accelerate"
+        "-framework CoreFoundation"
+    )
+endif()
+add_test(NAME StressDspTest COMMAND test_stress_dsp)
+
+# Three-Tier Quality Harness: Soak (continuous 25-track ping-pong; 5-min CI tier, 12h local)
+add_executable(test_soak tests/test_soak.cpp)
+target_link_libraries(test_soak PRIVATE pulse_audio_engine)
+if(APPLE)
+    target_link_libraries(test_soak PRIVATE
+        "-framework CoreAudio"
+        "-framework AudioToolbox"
+        "-framework Accelerate"
+        "-framework CoreFoundation"
+    )
+endif()
+add_test(NAME SoakShortTest COMMAND test_soak --duration 300 --report ${CMAKE_CURRENT_BINARY_DIR}/soak_short_report.json)
+
+set_tests_properties(StressDspTest SoakShortTest PROPERTIES TIMEOUT 1800)
 
 
 
