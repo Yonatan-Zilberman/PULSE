@@ -4,6 +4,7 @@
 //! Tag reading lives here (Rust) only — the C++ audio bridge is
 //! playback-only (see `Docs/Audio-Bridge-Contract.md`).
 
+pub mod analysis_cache;
 pub mod cache;
 pub mod errors;
 pub mod scanner;
@@ -12,6 +13,7 @@ pub mod store;
 pub mod tag_reader;
 pub mod types;
 
+pub use analysis_cache::{AnalysisCache, AnalysisRecord, AnalysisStageEntry, StageFreshness};
 pub use cache::LibraryCache;
 pub use errors::LibraryError;
 pub use scanner::{fs_state, scan_folder, validate_folder, DiscoveredFile, FsState};
