@@ -16,6 +16,7 @@ use tauri::State;
 use crate::audio_bridge::{
     AudioBridge, AudioBridgeError, DeckState, EngineConfig, EngineStats, TransitionPlan,
 };
+use crate::library::{LibraryError, LibraryStore, ScanReport, TrackSummary};
 use crate::models::TrackMetadata;
 
 #[tauri::command]
@@ -261,4 +262,48 @@ pub fn audio_execute_transition(
     plan: TransitionPlan,
 ) -> Result<(), AudioBridgeError> {
     bridge.execute_transition(&plan)
+}
+
+// ── Library ───────────────────────────────────────────────────────────────
+//
+// Library commands are synchronous: Tauri runs them on its blocking worker
+// pool. All state transitions flow through the pure `library` state
+// machine; content hashing happens in the background hash worker, never on
+// the command critical path.
+
+/// Register a folder as a library folder (idempotent) and ingest its
+/// contents. Returns the transition counts for this run; duplicate links
+/// for freshly hashed files land on the next dedup pass (background worker
+/// or an explicit `library_refresh`).
+#[tauri::command]
+pub fn library_add_folder(
+    store: State<'_, Arc<LibraryStore>>,
+    path: String,
+) -> Result<ScanReport, LibraryError> {
+    store.add_folder(&path)
+}
+
+/// Re-validate every registered folder and every indexed row (errored rows
+/// are retried for re-tagging; vanished files are marked missing).
+#[tauri::command]
+pub fn library_refresh(store: State<'_, Arc<LibraryStore>>) -> Result<ScanReport, LibraryError> {
+    store.refresh()
+}
+
+/// All tracks (including duplicates, flagged via `duplicate_of`), sorted by
+/// path. Rows whose file vanished are lazily marked `missing`.
+#[tauri::command]
+pub fn library_list(
+    store: State<'_, Arc<LibraryStore>>,
+) -> Result<Vec<TrackSummary>, LibraryError> {
+    store.list()
+}
+
+/// One track by id; unknown ids fail with a message-carrying `Db` error.
+#[tauri::command]
+pub fn library_get(
+    store: State<'_, Arc<LibraryStore>>,
+    id: String,
+) -> Result<TrackSummary, LibraryError> {
+    store.get(&id)
 }

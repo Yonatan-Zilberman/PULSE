@@ -5,7 +5,10 @@ pub mod dj_brain;
 pub mod library;
 pub mod models;
 
+use std::sync::Arc;
+
 use audio_bridge::AudioBridge;
+use library::{LibraryCache, LibraryStore};
 use tauri::Manager;
 
 pub fn create_app() -> tauri::Builder<tauri::Wry> {
@@ -16,6 +19,14 @@ pub fn create_app() -> tauri::Builder<tauri::Wry> {
             // action happens at construction — the engine opens only when
             // the audio_init command runs.
             app.manage(AudioBridge::new(app.handle().clone()));
+            // Persistent library store (app-data dir) + background hash worker.
+            let data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+            std::fs::create_dir_all(&data_dir).map_err(|e| format!("app data dir: {e}"))?;
+            let store = Arc::new(LibraryStore::new(LibraryCache::open(
+                data_dir.join("pulse-library.db"),
+            )?));
+            store.spawn_hash_worker();
+            app.manage(store);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -44,6 +55,10 @@ pub fn create_app() -> tauri::Builder<tauri::Wry> {
             commands::audio_set_tempo_ratio,
             commands::audio_set_pitch_preservation,
             commands::audio_set_stem_levels,
-            commands::audio_execute_transition
+            commands::audio_execute_transition,
+            commands::library_add_folder,
+            commands::library_refresh,
+            commands::library_list,
+            commands::library_get
         ])
 }
